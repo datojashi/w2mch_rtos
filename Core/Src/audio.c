@@ -85,9 +85,9 @@ static inline  void aLawEncode()
 		uint16_t dabs=abs(d);
 
 		if(d >= 0)
-			alawbuf[i]=alaw_p[dabs]^0x55;//^cypher_a[cypher_ct++];
+			alawbuf[i]=alaw_p[dabs];//^0x55;//^cypher_a[cypher_ct++];
 		else
-			alawbuf[i]=alaw_n[dabs]^0x55;//^cypher_a[cypher_ct++];
+			alawbuf[i]=alaw_n[dabs];//^0x55;//^cypher_a[cypher_ct++];
 
 		if(cypher_ct==16)
 			cypher_ct=0;

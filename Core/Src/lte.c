@@ -156,22 +156,26 @@ static inline  void lte_response_log()
 
 static inline void serverHandler()
 {
-	//if(server_response[0]==0 && server_response[1]==1)
+	if(server_response[0]==0 && server_response[1]==1)
 	{
-		HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
+		uart_log("=== SERVER === %u\r\n",server_response[2]);
 	}
 }
 
-static inline HAL_StatusTypeDef lte_start_recv_DMA(UART_HandleTypeDef *huart)
+static inline uint8_t lte_start_recv_DMA(UART_HandleTypeDef *huart)
 {
 	HAL_StatusTypeDef hstat;
-	recvcmplt=0;
 	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)server_response, 256);
 	if(hstat!=HAL_OK)
 	{
-		LOG("Error start receive DMA, for server commands\r\n");
+		LOG("Error start receive DMA, for server commands %u\r\n", hstat);
+		if(hstat==HAL_BUSY)
+		{
+			HAL_UART_AbortReceive(huart);
+		}
+		return 2;
 	}
-	return hstat;
+	return 0;
 }
 
 static inline LTE_Status lte_receive_DMA(UART_HandleTypeDef *huart, uint32_t Timeout)
@@ -562,8 +566,8 @@ static inline int lte_connect()
 
 static inline int lte_stop()
 {
-	/*
-	if(recvcmplt==0)
+	//*
+	//if(recvcmplt==0)
 	{
 		if(HAL_UART_AbortReceive(lte_param->huart)!=HAL_OK)
 		{
@@ -571,7 +575,7 @@ static inline int lte_stop()
 			return LTE_ERROR;
 		}
 	}
-	*/
+	//*/
 	if(transparent)
 	{
 		if(lte_endtransparent()==LTE_OK)
@@ -723,10 +727,10 @@ void lteTaskRun(void* param)
 	//*/
 
 
-	/*
+	//*
 	if(connected_to_server==1 && transparent==1)
 	{
-		lte_start_recv_DMA(lte_param->huart);
+		recvcmplt = lte_start_recv_DMA(lte_param->huart);
 	}
 	//*/
 
@@ -746,12 +750,14 @@ void lteTaskRun(void* param)
 			xSemaphoreGive(audioMutex);
 		}
 
-		/*
-		if(connected_to_server==1 && transparent==1 && recvcmplt==1)
+		//*
+		if(connected_to_server==1 && transparent==1 && recvcmplt > 0)
 		{
-			//serverHandler();
-			HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
-			lte_start_recv_DMA(lte_param->huart);
+			if(recvcmplt==1)
+			{
+				serverHandler();
+			}
+			recvcmplt=lte_start_recv_DMA(lte_param->huart);
 		}
 		//*/
 

@@ -1,1 +1,4 @@
- 1. Handling LTE module network loss. ???
+ //Problematic issues
+ 1. Handling LTE module network loss. 
+ 2. Noise in audio.
+ 3. Errors when receiving data from Server.
