@@ -2,3 +2,4 @@
  1. Handling LTE module network loss. 
  2. Noise in audio.
  3. Errors when receiving data from Server.
+ 4. Speed is 2.4Mb/s
