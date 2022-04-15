@@ -35,7 +35,8 @@ char server_response[256];
 volatile uint8_t recvcmplt=2;
 volatile uint32_t recv_tickstart=0;
 
-extern volatile uint8_t ready_for_send;
+
+extern volatile uint8_t send_flag;
 extern volatile uint16_t send_sz;
 extern uint8_t* readbuf;
 extern uint8_t* sendbuf;
@@ -52,15 +53,16 @@ void lteRecvHandler()
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	//uart_log("** Cplt **\r\n");
+	uart_log("** Cplt **\r\n");
 	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
+	recvcmplt=1;
 }
 
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
-	//uart_log("** Half **\r\n");
+	uart_log("** Half **\r\n");
 	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
-	recvcmplt=1;
+	//recvcmplt=1;
 }
 
 static inline  int lte_getLine(char* data)
@@ -576,6 +578,7 @@ static inline int lte_stop()
 		}
 	}
 	//*/
+	vTaskDelay(1000);
 	if(transparent)
 	{
 		if(lte_endtransparent()==LTE_OK)
@@ -738,14 +741,15 @@ void lteTaskRun(void* param)
 	for(;;)
 	{
 		//xSemaphoreTake(audioMutex,portMAX_DELAY);
+
 		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 		{
-			if(connected_to_server==1 && ready_for_send==1)
+			if(connected_to_server==1 && send_flag==1)
 			{
 				HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,1);
 				send_audio((char*)readbuf,24);
 				HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
-				ready_for_send=0;
+				send_flag=0;
 			}
 			xSemaphoreGive(audioMutex);
 		}

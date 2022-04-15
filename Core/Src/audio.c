@@ -36,7 +36,7 @@ volatile int samplebuf_offset=0;
 volatile uint8_t sampleBufReady=0;
 volatile uint8_t wrComplete=0;
 
-volatile uint8_t ready_for_send=0;
+volatile uint8_t send_flag=0;
 volatile uint16_t send_sz=0;
 
 volatile uint16_t signal_level[4]={2048,2048,2048,2048};
@@ -120,7 +120,7 @@ static inline void writeAudioData()
 }
 
 
-static inline int  readAudioData()
+static inline uint8_t  readAudioData()
 {
 	int result=0;
 	if(current_sector > (current_read_sector + READ_SECTORS_NUMBER))
@@ -134,6 +134,7 @@ static inline int  readAudioData()
 		else
 		{
 			LOG("Disk read error! current_read_sector=%d",current_read_sector);
+			result = 2;
 		}
 	}
 	return result;
@@ -199,20 +200,18 @@ void audioTaskRun(void* param)
 
 	while(1)
 	{
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,1);
 		if(sampleBufReady)
 		{
-			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,1);
+
 			HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
-			/*
+			//*
 			aLawEncode();
 			writeAudioData();
-			xSemaphoreTake(audioMutex,portMAX_DELAY);
-			readAudioData();
-			ready_for_send=1;
-			xSemaphoreGive(audioMutex);
+
 			//*/
 
-			//* TEST
+			/* TEST
 			  aLawEncode();
 			  xSemaphoreTake(audioMutex,portMAX_DELAY);
 			  memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
@@ -222,8 +221,15 @@ void audioTaskRun(void* param)
 			// */
 
 			sampleBufReady=0;
-			HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,0);
+
 		}
+		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+		{
+			if(send_flag==0)
+				send_flag=readAudioData();
+			xSemaphoreGive(audioMutex);
+		}
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,0);
 		vTaskDelay(1);
 	}
 }
