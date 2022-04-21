@@ -34,6 +34,7 @@ uint8_t transparent=0;
 char server_response[256];
 volatile uint8_t recvcmplt=2;
 volatile uint32_t recv_tickstart=0;
+volatile uint8_t uarterror=0;
 
 
 extern volatile uint8_t send_flag;
@@ -44,6 +45,7 @@ extern uint8_t* sendcmd;
 
 
 uint8_t pData[256];
+uint8_t ch_ct=0;
 
 void lteRecvHandler()
 {
@@ -54,6 +56,7 @@ void lteRecvHandler()
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	uart_log("** Cplt **\r\n");
+	printHex(server_response, 8);
 	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
 	recvcmplt=1;
 }
@@ -63,6 +66,17 @@ void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 	uart_log("** Half **\r\n");
 	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
 	//recvcmplt=1;
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+	if(huart==lte_param->huart)
+	{
+		uart_log("LTE UART Error!, Error code: %d \r\n", huart->ErrorCode);
+		huart->Instance->ISR=0;
+		HAL_UART_AbortReceive(huart);
+		uarterror=1;
+	}
 }
 
 static inline  int lte_getLine(char* data)
@@ -266,7 +280,7 @@ static inline LTE_Status lte_receive(UART_HandleTypeDef *huart,  uint32_t Timeou
 static inline  HAL_StatusTypeDef lte_send(char* data, size_t sz)
 {
 	HAL_StatusTypeDef hstat;
-	hstat=HAL_UART_Transmit(lte_param->huart, (unsigned char*)data, sz, 100);
+	hstat=HAL_UART_Transmit(lte_param->huart, (unsigned char*)data, sz, 1000);
 	if(hstat!=HAL_OK)
 	{
 		LOG("lte uart transmit error: %d \r\n",hstat);
@@ -284,7 +298,7 @@ static inline LTE_Status send_audio(char* data, int n)
 	{
 		d=data+512*i;
 		memcpy(sendbuf,d,512);
-		sendcmd[2]=0; //channel
+		sendcmd[2]=ch_ct++; //channel
 		sendcmd[3]=0x01; //cmd
 		*((uint32_t*)&sendcmd[4])=512;
 		if(lte_send((char*)sendcmd,560)==HAL_OK)
@@ -740,7 +754,19 @@ void lteTaskRun(void* param)
 
 	for(;;)
 	{
-		//xSemaphoreTake(audioMutex,portMAX_DELAY);
+
+		if(uarterror==1)
+		{
+			if(lte_start_recv_DMA(lte_param->huart)==0)
+			{
+				uarterror=0;
+			}
+			else
+			{
+				vTaskDelay(1000);
+				continue;
+			}
+		}
 
 		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 		{
@@ -766,6 +792,7 @@ void lteTaskRun(void* param)
 		//*/
 
 
+		 //*	For vorking with terminal
 		 if(xSemaphoreTake(terminalMutex,1)==pdTRUE)
 		 {
 			 if(terminalbuf.size != 0)
@@ -774,6 +801,7 @@ void lteTaskRun(void* param)
 			 }
 			 xSemaphoreGive(terminalMutex);
 		 }
+		 //*/
 
 		 if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
 		 {

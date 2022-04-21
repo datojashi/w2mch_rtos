@@ -205,29 +205,28 @@ void audioTaskRun(void* param)
 		{
 
 			HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
-			//*
 			aLawEncode();
+#ifdef __SD__
 			writeAudioData();
-
-			//*/
-
-			/* TEST
-			  aLawEncode();
-			  xSemaphoreTake(audioMutex,portMAX_DELAY);
-			  memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
-			  ready_for_send=1;
-			  xSemaphoreGive(audioMutex);
-
-			// */
-
+#endif
 			sampleBufReady=0;
-
 		}
 		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 		{
+#ifdef __SD__
 			if(send_flag==0)
 				send_flag=readAudioData();
 			xSemaphoreGive(audioMutex);
+#else
+			if(send_flag==0)
+			{
+				memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
+				memset(readbuf, 0xff, ALAW_BUFFER_SIZE);
+				send_flag=1;
+			}
+			xSemaphoreGive(audioMutex);
+			while(sampleBufReady==0) vTaskDelay(1);
+#endif
 		}
 		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,0);
 		vTaskDelay(1);

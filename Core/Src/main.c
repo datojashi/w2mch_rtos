@@ -748,6 +748,7 @@ void StartMainTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
 	terminalRun(argument);
+	//uart_log("Terminal Task disabled in this release. \r\n");
   /* USER CODE END 5 */
 }
 
