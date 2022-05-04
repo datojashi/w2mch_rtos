@@ -8,7 +8,7 @@
 #include "stdarg.h"
 //#include "main.h"
 
-#define MAX_POLLING	100
+#define MAX_POLLING	300
 
 inline static uint32_t polling(SD_HandleTypeDef *hsd)
 {
@@ -26,11 +26,13 @@ inline static uint32_t polling(SD_HandleTypeDef *hsd)
 		   		HAL_Delay(1);
 		   	}
 	 }
+	uart_log("============== %d\r\n",st);
 	return 0;
 }
 
 inline static HAL_StatusTypeDef readBlocks(SD_HandleTypeDef *hsd, uint8_t *buf, uint32_t sector, uint32_t secNmb)
 {
+	hsd->ErrorCode=0;
 	if(!polling(hsd))
 		return HAL_ERROR;
 	else
@@ -43,6 +45,7 @@ inline static HAL_StatusTypeDef readBlocks(SD_HandleTypeDef *hsd, uint8_t *buf, 
 inline static HAL_StatusTypeDef writeBlocks(SD_HandleTypeDef *hsd, uint8_t *buf, uint32_t sector, uint32_t secNmb)
 {
 	HAL_StatusTypeDef res=HAL_OK;
+	hsd->ErrorCode=0;
 	if(polling(hsd))
 	{
 		res=HAL_SD_WriteBlocks(hsd, buf, sector, secNmb,1000);

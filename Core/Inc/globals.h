@@ -14,7 +14,40 @@
 
 #include "main.h"
 
+enum  CMD
+{
+    cmd_ping_request    =   0x01U, // server <--> sensor
+    cmd_ping_response   =   0x02U, // sensor <--> server
 
+	cmd_AudioData_request   =   0x03U, // sensor --> server
+	cmd_AudioData_response  =   0x04U, // server --> server
+
+	cmd_startAudio_request  =   0x05U, // server --> sensor
+	cmd_startAudio_response =   0x06U, // sensor --> server
+
+	cmd_stopAudio_request   =   0x06U, //  server --> sensor
+	cmd_stopAudio_response  =   0x07U, //  sensor --> server
+
+	cmd_startLive_request   =   0x08U, // server --> sensor
+    cmd_stopLive_response   =   0x09U, // sensor --> server
+
+    cmd_None    =0x00ffU
+};
+
+struct __attribute__((__packed__)) COMMAND
+{
+    uint8_t cmd;
+    uint32_t start;
+    uint32_t stop;
+};
+
+struct __attribute__((__packed__)) MESSAGE
+{
+    uint16_t tag;
+    uint8_t nmb;
+    uint8_t cmd;
+    uint32_t sz;
+};
 
 typedef struct
 {

@@ -31,21 +31,25 @@ volatile uint8_t connected_to_server=0;
 uint8_t lte_status=0;
 uint8_t transparent=0;
 
-char server_response[256];
+char server_message_data[256];
 volatile uint8_t recvcmplt=2;
 volatile uint32_t recv_tickstart=0;
 volatile uint8_t uarterror=0;
 
+uint8_t* sendbuf;
+uint8_t* sendcmd;
+
+struct MESSAGE* msg;
 
 extern volatile uint8_t send_flag;
-extern volatile uint16_t send_sz;
 extern uint8_t* readbuf;
-extern uint8_t* sendbuf;
-extern uint8_t* sendcmd;
 
+//extern uint8_t* sendbuf;
+//extern uint8_t* sendcmd;
+
+extern uint8_t channels_number;
 
 uint8_t pData[256];
-uint8_t ch_ct=0;
 
 void lteRecvHandler()
 {
@@ -56,7 +60,7 @@ void lteRecvHandler()
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	uart_log("** Cplt **\r\n");
-	printHex(server_response, 8);
+	printHex(server_message_data, 8);
 	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
 	recvcmplt=1;
 }
@@ -172,16 +176,16 @@ static inline  void lte_response_log()
 
 static inline void serverHandler()
 {
-	if(server_response[0]==0 && server_response[1]==1)
+	if(server_message_data[0]==0 && server_message_data[1]==1)
 	{
-		uart_log("=== SERVER === %u\r\n",server_response[2]);
+		uart_log("=== SERVER === %u\r\n",server_message_data[2]);
 	}
 }
 
 static inline uint8_t lte_start_recv_DMA(UART_HandleTypeDef *huart)
 {
 	HAL_StatusTypeDef hstat;
-	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)server_response, 256);
+	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)server_message_data, 256);
 	if(hstat!=HAL_OK)
 	{
 		LOG("Error start receive DMA, for server commands %u\r\n", hstat);
@@ -280,7 +284,7 @@ static inline LTE_Status lte_receive(UART_HandleTypeDef *huart,  uint32_t Timeou
 static inline  HAL_StatusTypeDef lte_send(char* data, size_t sz)
 {
 	HAL_StatusTypeDef hstat;
-	hstat=HAL_UART_Transmit(lte_param->huart, (unsigned char*)data, sz, 1000);
+	hstat=HAL_UART_Transmit(lte_param->huart, (unsigned char*)data, sz, 100);
 	if(hstat!=HAL_OK)
 	{
 		LOG("lte uart transmit error: %d \r\n",hstat);
@@ -298,9 +302,14 @@ static inline LTE_Status send_audio(char* data, int n)
 	{
 		d=data+512*i;
 		memcpy(sendbuf,d,512);
-		sendcmd[2]=ch_ct++; //channel
-		sendcmd[3]=0x01; //cmd
-		*((uint32_t*)&sendcmd[4])=512;
+
+		//msg->tag=0x55aa;
+		msg->nmb=channels_number;
+		msg->cmd=cmd_AudioData_request;
+		msg->sz=512;
+		//sendcmd[2]=channels_number;
+		//sendcmd[3]=cmd_AudioData_request;
+		//*((uint32_t*)&sendcmd[4])=512;
 		if(lte_send((char*)sendcmd,560)==HAL_OK)
 		{
 			result=LTE_OK;
@@ -724,6 +733,12 @@ static inline void sendTerminalCommand()
 void lteTaskRun(void* param)
 {
 	lte_param=(LTE_PARAM*)param;
+
+	sendcmd=(lte_param->sram1+0x50000);
+	sendbuf=(lte_param->sram1+0x50008);
+
+	msg = (struct MESSAGE*)sendcmd;
+	msg->tag = 0x55aa;
 
 
 	//*

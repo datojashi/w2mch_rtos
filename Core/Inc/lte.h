@@ -8,7 +8,7 @@
 #ifndef INC_LTE_H_
 #define INC_LTE_H_
 
-#define BAUD_RATE 3200000
+#define BAUD_RATE 921600//3200000
 
 typedef enum
 {
@@ -22,6 +22,8 @@ typedef enum
 typedef struct
 {
 	UART_HandleTypeDef* huart;
+	uint8_t * const sram1;
+	uint8_t * const sram2;
 }LTE_PARAM;
 
 

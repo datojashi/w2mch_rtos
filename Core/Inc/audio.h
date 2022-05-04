@@ -19,7 +19,7 @@
 
 #define READ_SECTORS_NUMBER	ALAW_BUFFER_SECTORS
 
-//#define __SD__
+#define __SD__
 
 typedef struct
 {
