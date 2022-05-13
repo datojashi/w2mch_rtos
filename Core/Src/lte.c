@@ -185,6 +185,11 @@ static inline void serverHandler()
 static inline uint8_t lte_start_recv_DMA(UART_HandleTypeDef *huart)
 {
 	HAL_StatusTypeDef hstat;
+	if(huart->RxState != HAL_UART_STATE_READY)
+	{
+		HAL_UART_AbortReceive(huart);
+		vTaskDelay(1);
+	}
 	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)server_message_data, 256);
 	if(hstat!=HAL_OK)
 	{
@@ -204,6 +209,12 @@ static inline LTE_Status lte_receive_DMA(UART_HandleTypeDef *huart, uint32_t Tim
 	LTE_Status result=LTE_NO;
 	HAL_StatusTypeDef hstat;
 
+	if(huart->RxState != HAL_UART_STATE_READY)
+	{
+		HAL_UART_AbortReceive(huart);
+		vTaskDelay(1);
+	}
+
 	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)lte_response_raw, MAX_LTE_RESPONSE_RAW_LENGTH);
 	if(hstat==HAL_OK)
 	{
@@ -218,7 +229,7 @@ static inline LTE_Status lte_receive_DMA(UART_HandleTypeDef *huart, uint32_t Tim
 				uart_log("============ %s\r\n",lte_response_raw);
 				uart_log("============ %d\r\n",lte_response_size);
 				hstat=HAL_UART_AbortReceive(huart);
-				return HAL_TIMEOUT;
+				return LTE_ERROR;
 			}
 			result = lte_getResp();
 		}
@@ -511,11 +522,17 @@ static inline LTE_Status change_baudrate(uint32_t baudrate)
 
 static inline LTE_Status lte_start()
 {
+	LOG("Starting LTE Network ... \r\n");
 	LTE_Status result=LTE_NO;
-	if(lte_ping()==LTE_ERROR)
+	uint8_t try_ct=0;
+	while(lte_ping()==LTE_ERROR)
 	{
 		LOG("ERROR: Can't communicate with module \r\n");
-		return LTE_ERROR;
+		if(++try_ct==3)
+		{
+			return LTE_ERROR;
+		}
+		vTaskDelay(1000);
 	}
 	uart_log("LTE Communication with 115000 boudrate oK, Changing boudrate... \r\n");
 
@@ -770,11 +787,10 @@ void lteTaskRun(void* param)
 	send_flag=1;
 
 	//*
-	vTaskDelay(1000);
 	lte_pwr();
-	uart_log("LTE powered ON, waiting ready!\r\n");
+	LOG("LTE powered ON, waiting ready!\r\n");
 	vTaskDelay(12000);
-	uart_log("LTE started\r\n");
+	LOG("LTE ready!\r\n");
 	//*/
 
 	//*
