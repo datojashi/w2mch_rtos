@@ -77,6 +77,7 @@ static inline  void aLawEncode()
 	for(int i=0; i<ALAW_BUFFER_SIZE; i++)
 	{
 		uint16_t sample=samplebuf[samplebuf_offset+i]&0x0fff;
+		//uint16_t sample = signal_level[i%channels_number];
 		int16_t d=sample-signal_level[i%channels_number];
 		uint16_t dabs=abs(d);
 
@@ -175,7 +176,7 @@ void audioTaskRun(void* param)
 	channels_number=audio_param->hadc->Init.NbrOfConversion;
 
 	HAL_GPIO_WritePin(TEST2_GPIO_Port, TEST2_Pin, 0);
-	vTaskDelay(2000);
+	vTaskDelay(4000);
 
 	HAL_StatusTypeDef result=HAL_ADC_Start_DMA(audio_param->hadc, (uint32_t*)samplebuf, SAMPLE_BUFFER_SIZE/2);
 	//HAL_StatusTypeDef result=HAL_ADC_Start_IT(audio_param->hadc);

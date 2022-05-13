@@ -201,7 +201,7 @@ static inline uint8_t lte_start_recv_DMA(UART_HandleTypeDef *huart)
 static inline LTE_Status lte_receive_DMA(UART_HandleTypeDef *huart, uint32_t Timeout)
 {
 	uint32_t tickstart;
-	int result=LTE_NO;
+	LTE_Status result=LTE_NO;
 	HAL_StatusTypeDef hstat;
 
 	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)lte_response_raw, MAX_LTE_RESPONSE_RAW_LENGTH);
@@ -456,6 +456,19 @@ static inline LTE_Status lte_tcp_check()
 	return result;
 }
 
+static inline LTE_Status lte_pwr_off()
+{
+	char data[64];
+	size_t n=sprintf(data,"AT+CPOF\r\n");
+	return processCommand(data, n);
+}
+
+static inline LTE_Status lte_reset()
+{
+	char data[64];
+	size_t n=sprintf(data,"AT+CRESET\r\n");
+	return processCommand(data, n);
+}
 
 static inline int lte_ping()
 {
@@ -649,6 +662,15 @@ static inline size_t lte_recv(char* data)
 	return lte_getLine(data);
 }
 
+
+
+static inline void lte_pwr()
+{
+	HAL_GPIO_WritePin(LTE_ONOFF_GPIO_Port, LTE_ONOFF_Pin, 0);
+	vTaskDelay(1000);
+	HAL_GPIO_WritePin(LTE_ONOFF_GPIO_Port, LTE_ONOFF_Pin, 1);
+}
+
 static inline void sendTerminalCommand()
 {
 	if(transparent==0)
@@ -715,6 +737,10 @@ static inline void sendTerminalCommand()
 		{
 			change_baudrate(115200);
 		}
+		else if(strcmp(terminalbuf.buf,"pwr")==0)
+		{
+			lte_pwr();
+		}
 		else
 		{
 			terminalbuf.buf[terminalbuf.size+1]='\r';
@@ -740,6 +766,16 @@ void lteTaskRun(void* param)
 	msg = (struct MESSAGE*)sendcmd;
 	msg->tag = 0x55aa;
 
+
+	send_flag=1;
+
+	//*
+	vTaskDelay(1000);
+	lte_pwr();
+	uart_log("LTE powered ON, waiting ready!\r\n");
+	vTaskDelay(12000);
+	uart_log("LTE started\r\n");
+	//*/
 
 	//*
 	if(lte_start()!=LTE_OK)
@@ -770,64 +806,65 @@ void lteTaskRun(void* param)
 	for(;;)
 	{
 
-		if(uarterror==1)
+		if(connected_to_server==1 && transparent==1)
 		{
-			if(lte_start_recv_DMA(lte_param->huart)==0)
+			if(uarterror==1)
 			{
-				uarterror=0;
+				if(lte_start_recv_DMA(lte_param->huart)==0)
+				{
+					uarterror=0;
+				}
+				else
+				{
+					vTaskDelay(1000);
+					continue;
+				}
 			}
-			else
-			{
-				vTaskDelay(1000);
-				continue;
-			}
-		}
 
-		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
-		{
-			if(connected_to_server==1 && send_flag==1)
+			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 			{
-				HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,1);
-				send_audio((char*)readbuf,24);
-				HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
-				send_flag=0;
+				if(send_flag==1)
+				{
+					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,1);
+					send_audio((char*)readbuf,24);
+					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
+					send_flag=0;
+				}
+				xSemaphoreGive(audioMutex);
 			}
-			xSemaphoreGive(audioMutex);
-		}
 
 		//*
-		if(connected_to_server==1 && transparent==1 && recvcmplt > 0)
-		{
-			if(recvcmplt==1)
+			if(recvcmplt > 0)
 			{
-				serverHandler();
+				if(recvcmplt==1)
+				{
+					serverHandler();
+				}
+				recvcmplt=lte_start_recv_DMA(lte_param->huart);
 			}
-			recvcmplt=lte_start_recv_DMA(lte_param->huart);
+		//*/
+		}
+
+		//*	For vorking with terminal
+		if(xSemaphoreTake(terminalMutex,1)==pdTRUE)
+		{
+			if(terminalbuf.size != 0)
+			{
+				sendTerminalCommand();
+			}
+			xSemaphoreGive(terminalMutex);
 		}
 		//*/
 
-
-		 //*	For vorking with terminal
-		 if(xSemaphoreTake(terminalMutex,1)==pdTRUE)
-		 {
-			 if(terminalbuf.size != 0)
-			 {
-				 sendTerminalCommand();
-			 }
-			 xSemaphoreGive(terminalMutex);
-		 }
-		 //*/
-
-		 if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
-		 {
-
-			 uart_log("User Button clicked, transparent=%u stoping ...\r\n",transparent);
-			 lte_stop();
-			 vTaskDelay(100);
-			 while(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)!=0);
-			 uart_log("Stoped!\r\n");
-		 }
-
+		if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
+		{
+			uart_log("User Button clicked, transparent=%u stoping ...\r\n",transparent);
+			lte_stop();
+			lte_pwr();
+			vTaskDelay(100);
+			while(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)!=0);
+			uart_log("Stoped!\r\n");
+		}
 		vTaskDelay(1);
 	}
 }
