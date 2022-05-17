@@ -31,7 +31,18 @@ enum  CMD
 	cmd_startLive_request   =   0x08U, // server --> sensor
     cmd_stopLive_response   =   0x09U, // sensor --> server
 
+	cmd_setRTC_request	= 0x0aU,	//server --> sensor
+	cmd_setRTC_response	= 0x0bU,	//sensor --> server
+
     cmd_None    =0x00ffU
+};
+
+enum SEND_FLAG{
+	sf_Read	= 0x00U,
+	sf_Send = 0x01U,
+	sf_ReadError = 0x02,
+	sf_No = 0x03,
+	sf_Live = 0x04,
 };
 
 struct __attribute__((__packed__)) COMMAND
@@ -47,6 +58,21 @@ struct __attribute__((__packed__)) MESSAGE
     uint8_t nmb;
     uint8_t cmd;
     uint32_t sz;
+};
+
+struct __attribute__((__packed__)) CLOCK_DATA
+{
+	uint8_t sec;
+	uint8_t min;
+	uint8_t hour;
+	uint8_t day;
+	uint8_t mon;
+	uint8_t year;
+
+	uint32_t sector;
+	uint16_t filler1;
+	uint16_t filler2;
+	uint16_t filler3;
 };
 
 typedef struct
@@ -69,13 +95,14 @@ typedef struct
 
 extern xSemaphoreHandle terminalMutex;
 extern xSemaphoreHandle audioMutex;
+extern xSemaphoreHandle rtcMutex;
 
 extern MEM_BUF terminalbuf;
 //extern osMutexId_t terminalMutexHandle;
 
 
-RTC_TimeTypeDef currTime;
-RTC_DateTypeDef currDate;
+extern RTC_TimeTypeDef currTime;
+extern RTC_DateTypeDef currDate;
 //extern volatile uint8_t loging;
 extern uint8_t reboot;
 

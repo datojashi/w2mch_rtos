@@ -17,7 +17,10 @@
 
 
 
+
 LTE_PARAM* lte_param;
+
+
 
 char term_response[MAX_LTE_RESPONSE_LINES][MAX_LTE_RESPONSE_LINE_LENGTH];
 char lte_response[MAX_LTE_RESPONSE_LINES][MAX_LTE_RESPONSE_LINE_LENGTH];
@@ -41,6 +44,9 @@ uint8_t* sendcmd;
 
 struct MESSAGE* msg;
 
+uint8_t last_cmd=cmd_None;
+
+extern RTC_HandleTypeDef hrtc;
 extern volatile uint8_t send_flag;
 extern uint8_t* readbuf;
 
@@ -174,11 +180,67 @@ static inline  void lte_response_log()
 }
 
 
+static inline void setDateTime(uint8_t ofs)
+{
+	currTime.Seconds=server_message_data[ofs];
+	currTime.Minutes=server_message_data[ofs+1];
+	currTime.Hours=server_message_data[ofs+2];
+	HAL_RTC_SetTime(&hrtc, &currTime, FORMAT_BIN);
+
+	currDate.Date=server_message_data[ofs+3];
+	currDate.Month=server_message_data[ofs+4];
+	currDate.Year=server_message_data[ofs+5];
+	HAL_RTC_SetDate(&hrtc, &currDate, FORMAT_BIN);
+
+	LOG("%02d:%02d:%02d %02d.%02d.%02d\r\n",currTime.Hours, currTime.Minutes,
+			currTime.Seconds,currDate.Date, currDate.Month, currDate.Year);
+}
+
 static inline void serverHandler()
 {
-	if(server_message_data[0]==0 && server_message_data[1]==1)
+	if(server_message_data[0]==0)
 	{
-		uart_log("=== SERVER === %u\r\n",server_message_data[2]);
+		last_cmd=server_message_data[1];
+		switch(last_cmd)
+		{
+		case cmd_ping_request:
+		{
+			uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
+			break;
+		}
+		case cmd_ping_response:
+		{
+			break;
+		}
+		case cmd_startAudio_request:
+		{
+			uart_log("=== Start Audio Request === %u\r\n",server_message_data[2]);
+			break;
+		}
+		case cmd_stopAudio_request:
+		{
+			break;
+		}
+		case cmd_startLive_request:
+		{
+			break;
+		}
+		case cmd_setRTC_request:
+		{
+			if(xSemaphoreTake(rtcMutex,1))
+			{
+				setDateTime(3);
+				xSemaphoreGive(rtcMutex);
+			}
+			else
+			{
+				LOG("Cant take RTC Mutex\r\n");
+			}
+			break;
+		}
+		default:
+			break;
+		}
 	}
 }
 
@@ -784,10 +846,11 @@ void lteTaskRun(void* param)
 	msg->tag = 0x55aa;
 
 
-	send_flag=1;
+	send_flag=sf_Send;
 
-	//*
+	/*
 	lte_pwr();
+	vTaskDelay(2000);
 	LOG("LTE powered ON, waiting ready!\r\n");
 	vTaskDelay(12000);
 	LOG("LTE ready!\r\n");
@@ -839,12 +902,22 @@ void lteTaskRun(void* param)
 
 			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 			{
-				if(send_flag==1)
+				if(last_cmd==cmd_startAudio_request || last_cmd==cmd_startLive_request)
+				{
+					send_flag=sf_Read;
+				}
+
+				if(last_cmd==cmd_stopAudio_request || last_cmd==cmd_stopLive_response)
+				{
+					send_flag=sf_No;
+				}
+
+				if(send_flag==sf_Send)
 				{
 					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,1);
 					send_audio((char*)readbuf,24);
 					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
-					send_flag=0;
+					send_flag=sf_Read;
 				}
 				xSemaphoreGive(audioMutex);
 			}
@@ -876,7 +949,7 @@ void lteTaskRun(void* param)
 		{
 			uart_log("User Button clicked, transparent=%u stoping ...\r\n",transparent);
 			lte_stop();
-			lte_pwr();
+			lte_pwr_off();
 			vTaskDelay(100);
 			while(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)!=0);
 			uart_log("Stoped!\r\n");

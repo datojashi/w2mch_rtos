@@ -13,7 +13,7 @@
 
 #define SETTINGS_SECTOR	128*512
 //#define META_SECTOR	256*512
-//#define CLOCK_SECTOR	200000
+#define CLOCK_SECTOR	200000
 //#define AVG_SAMPLE_SECTOR 500000
 #define DATA_SECTOR	1000000
 
@@ -22,6 +22,7 @@ REC_SETTS rec_setts;
 
 volatile static int current_sector=DATA_SECTOR;
 volatile static int current_read_sector=DATA_SECTOR;
+volatile static int current_clock_sector=CLOCK_SECTOR;
 
 uint16_t* samplebuf;
 uint8_t* samplebufByte;
@@ -37,6 +38,14 @@ volatile uint8_t wrComplete=0;
 volatile uint8_t send_flag=0;
 
 volatile uint16_t signal_level[4]={2048,2048,2048,2048};
+
+RTC_TimeTypeDef sTime;
+RTC_DateTypeDef sDate;
+struct CLOCK_DATA clock_data[32];
+uint32_t clock_index=0;
+uint32_t clock_ct=0;
+
+extern RTC_HandleTypeDef hrtc;
 
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
@@ -91,6 +100,30 @@ static inline  void aLawEncode()
 	}
 }
 
+static uint8_t writeClockData()
+{
+	if( current_clock_sector < DATA_SECTOR)
+	{
+		wrComplete=0;
+		HAL_StatusTypeDef stat=writeBlocks(audio_param->hsd, (uint8_t*)clock_data, current_clock_sector, 1);
+		if(stat==HAL_OK)
+		{
+			current_clock_sector++;
+			return 1;
+		}
+		else
+		{
+			LOG("Disk clock data write error, current_clock_sector=%d, status=%d, error=%d \r\n",current_clock_sector,stat,audio_param->hsd->ErrorCode);
+			return 0;
+		}
+	}
+	else
+	{
+		LOG("Disk clock part overflow! \r\n");
+		return 0;
+	}
+}
+
 static uint8_t  writeAudioData()
 {
 	if( (current_sector+ALAW_BUFFER_SECTORS) < rec_setts.totalSectors)
@@ -129,15 +162,35 @@ static inline uint8_t  readAudioData()
 		if(stat==HAL_OK)
 		{
 			current_read_sector=current_read_sector+READ_SECTORS_NUMBER;
-			result=1;
+			result=sf_Send;
 		}
 		else
 		{
 			LOG("Disk read error! current_read_sector=%d, status=%d, error=%d\r\n",current_read_sector, stat, audio_param->hsd->ErrorCode);
-			result = 2;
+			result = sf_ReadError;
 		}
 	}
 	return result;
+}
+
+static inline void processClock()
+{
+	struct CLOCK_DATA c;
+	c.sec=sTime.Seconds;
+	c.min=sTime.Minutes;
+	c.hour=sTime.Hours;
+	c.day=sDate.Date;
+	c.mon=sDate.Month;
+	c.year=sDate.Year;
+
+	clock_data[clock_index]=c;
+	if(++clock_index==32)
+	{
+		writeClockData();
+		clock_index=0;
+	}
+	LOG("System clock:  %02d:%02d:%02d %02d.%02d.%02d\r\n",sTime.Hours, sTime.Minutes, sTime.Seconds,
+			sDate.Date, sDate.Month, sDate.Year);
 }
 
 static inline int sendAudioData()
@@ -210,34 +263,56 @@ void audioTaskRun(void* param)
 #ifdef __SD__
 			if(writeAudioData()==0)
 			{
-				//HAL_SD_Init(audio_param->hsd);
-				//audio_param->hsd->ErrorCode=0;
 				LOG("Disk write error, abort!\r\n");
 				HAL_SD_Abort(audio_param->hsd);
-				//HAL_SD_Init(audio_param->hsd);
 			}
 #endif
+			if(++clock_ct==4)
+			{
+				if(xSemaphoreTake(rtcMutex,10))
+				{
+					HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+					HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+					xSemaphoreGive(rtcMutex);
+					processClock();
+				}
+				clock_ct=0;
+			}
 			sampleBufReady=0;
 		}
 		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 		{
 #ifdef __SD__
-			if(send_flag==0)
+			switch(send_flag)
+			{
+			case sf_Read:
+			{
 				send_flag=readAudioData();
-			xSemaphoreGive(audioMutex);
-			if(send_flag==2)
+				break;
+			}
+			case sf_ReadError:
 			{
 				LOG("Disk read error, Abort!\r\n");
 				HAL_SD_Abort(audio_param->hsd);
-				send_flag=0;
-				//HAL_SD_Init(audio_param->hsd);
+				send_flag=sf_Read;
+				break;
 			}
+			case sf_Live:
+			{
+				memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
+				send_flag=sf_Send;
+				break;
+			}
+			default:
+				break;
+			}
+			xSemaphoreGive(audioMutex);
 #else
 			if(send_flag==0)
 			{
 				memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
 				memset(readbuf, 0xff, ALAW_BUFFER_SIZE);
-				send_flag=1;
+				send_flag=sf_Send;
 			}
 			xSemaphoreGive(audioMutex);
 			while(sampleBufReady==0) vTaskDelay(1);

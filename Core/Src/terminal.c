@@ -10,7 +10,7 @@
 
 #include "terminal.h"
 
-extern RTC_HandleTypeDef hrtc;
+//extern RTC_HandleTypeDef hrtc;
 
 TERMINAL_PARAM* terminal_param;
 
@@ -57,6 +57,7 @@ void logConfig()
 
 void writeConfig()
 {
+	/*
 	for(int i=0; i<4; i++)
 	{
 		HAL_RTCEx_BKUPWrite(&hrtc, i, netConfig.local_ip[i]);
@@ -65,10 +66,12 @@ void writeConfig()
 	}
 	HAL_RTCEx_BKUPWrite(&hrtc, 12, netConfig.local_port);
 	HAL_RTCEx_BKUPWrite(&hrtc, 13, netConfig.server_port);
+	*/
 }
 
 void readConfig()
 {
+	/*
 	for(int i=0; i<4; i++)
 	{
 		netConfig.local_ip[i]=HAL_RTCEx_BKUPRead(&hrtc, i);
@@ -78,6 +81,7 @@ void readConfig()
 	netConfig.local_port=HAL_RTCEx_BKUPRead(&hrtc, 12);
 	netConfig.server_port=HAL_RTCEx_BKUPRead(&hrtc, 13);
 	logConfig();
+	*/
 }
 
 void parseIP(char* sip, uint8_t* ip)
@@ -161,11 +165,11 @@ void parseCmd(char* buf)
 	 }
 	 else if(strcmp(cmd[0],"dt")==0)
 	 {
-		 HAL_RTC_GetTime(&hrtc, &currTime, RTC_FORMAT_BIN);
-		 HAL_RTC_GetDate(&hrtc, &currDate, RTC_FORMAT_BIN);
-		 uart_log("%02d:%02d:%02d %02d.%02d.%02d\r\n",
-				 currTime.Hours, currTime.Minutes, currTime.Seconds,
-		 	     currDate.Date, currDate.Month, currDate.Year);
+		 //HAL_RTC_GetTime(&hrtc, &currTime, RTC_FORMAT_BIN);
+		 //HAL_RTC_GetDate(&hrtc, &currDate, RTC_FORMAT_BIN);
+		 //uart_log("%02d:%02d:%02d %02d.%02d.%02d\r\n",
+		//		 currTime.Hours, currTime.Minutes, currTime.Seconds,
+		// 	     currDate.Date, currDate.Month, currDate.Year);
 	 }
 	 else if(strcmp(cmd[0],"")==0)
 	 {
@@ -188,8 +192,8 @@ void terminalRun(void* param)
 	//prompt=p_prompt;
 	for(;;)
 	{
-		HAL_RTC_GetTime(&hrtc, &currTime, RTC_FORMAT_BIN);
-	    HAL_RTC_GetDate(&hrtc, &currDate, RTC_FORMAT_BIN);
+		//HAL_RTC_GetTime(&hrtc, &currTime, RTC_FORMAT_BIN);
+	    //HAL_RTC_GetDate(&hrtc, &currDate, RTC_FORMAT_BIN);
 	    if(sec!=currTime.Seconds)
 	    {
 	    	//LOG("%02d:%02d:%02d %02d.%02d.%02d\r\n",currTime.Hours, currTime.Minutes, currTime.Seconds,

@@ -131,6 +131,7 @@ AUDIO_PARAM audio_task_param=
 
 xSemaphoreHandle terminalMutex;
 xSemaphoreHandle audioMutex;
+xSemaphoreHandle rtcMutex;
 
 MEM_BUF terminalbuf;
 
@@ -206,6 +207,16 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+  //MX_USART1_UART_Init();
+
+
+  HAL_GPIO_WritePin(LTE_ONOFF_GPIO_Port, LTE_ONOFF_Pin, 0);
+  HAL_Delay(1000);
+  HAL_GPIO_WritePin(LTE_ONOFF_GPIO_Port, LTE_ONOFF_Pin, 1);;
+  LOG("LTE powered ON, waiting ready!\r\n");
+  HAL_Delay(12000);
+  LOG("LTE ready!\r\n");
+
   MX_USART2_UART_Init();
 
 
@@ -233,6 +244,15 @@ int main(void)
   else
   {
 	  LOG("Error creating Audio Mutex");
+  }
+  rtcMutex = xSemaphoreCreateMutex();
+  if(rtcMutex!=NULL)
+  {
+	  LOG("RTC Mutex created\r\n");
+  }
+  else
+  {
+	  LOG("Error creating RTC Mutex");
   }
   /* USER CODE END RTOS_MUTEX */
 
@@ -486,7 +506,7 @@ static void MX_SDMMC1_SD_Init(void)
 {
 
   /* USER CODE BEGIN SDMMC1_Init 0 */
-	LOG("SD MMC INIT 1 \r\n");
+	LOG("Started SD MMC Initialization \r\n");
   /* USER CODE END SDMMC1_Init 0 */
 
   /* USER CODE BEGIN SDMMC1_Init 1 */
@@ -504,7 +524,7 @@ static void MX_SDMMC1_SD_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SDMMC1_Init 2 */
-  LOG("SD MMC INIT 2 \r\n");
+  LOG("OK, SD MMC Initialized. \r\n");
   /* USER CODE END SDMMC1_Init 2 */
 
 }
@@ -540,7 +560,7 @@ static void MX_USART1_UART_Init(void)
   }
   /* USER CODE BEGIN USART1_Init 2 */
   uart_logger_init(&huart1,"w2mch>");
-  LOG("====================1\r\n");
+  LOG("Loger UART Initialized\r\n");
   /* USER CODE END USART1_Init 2 */
 
 }
