@@ -35,7 +35,7 @@ volatile int samplebuf_offset=0;
 volatile uint8_t sampleBufReady=0;
 volatile uint8_t wrComplete=0;
 
-volatile uint8_t send_flag=0;
+volatile uint8_t send_flag=sf_No;
 
 volatile uint16_t signal_level[4]={2048,2048,2048,2048};
 
@@ -189,8 +189,8 @@ static inline void processClock()
 		writeClockData();
 		clock_index=0;
 	}
-	LOG("System clock:  %02d:%02d:%02d %02d.%02d.%02d\r\n",sTime.Hours, sTime.Minutes, sTime.Seconds,
-			sDate.Date, sDate.Month, sDate.Year);
+	//LOG("System clock:  %02d:%02d:%02d %02d.%02d.%02d\r\n",sTime.Hours, sTime.Minutes, sTime.Seconds,
+	//		sDate.Date, sDate.Month, sDate.Year);
 }
 
 static inline int sendAudioData()

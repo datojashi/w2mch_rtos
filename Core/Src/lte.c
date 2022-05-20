@@ -56,6 +56,7 @@ extern uint8_t* readbuf;
 extern uint8_t channels_number;
 
 uint8_t pData[256];
+uint32_t pingTick=0;
 
 void lteRecvHandler()
 {
@@ -84,7 +85,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 	{
 		uart_log("LTE UART Error!, Error code: %d \r\n", huart->ErrorCode);
 		huart->Instance->ISR=0;
-		HAL_UART_AbortReceive(huart);
+		HAL_UART_Abort(huart);
 		uarterror=1;
 	}
 }
@@ -196,53 +197,7 @@ static inline void setDateTime(uint8_t ofs)
 			currTime.Seconds,currDate.Date, currDate.Month, currDate.Year);
 }
 
-static inline void serverHandler()
-{
-	if(server_message_data[0]==0)
-	{
-		last_cmd=server_message_data[1];
-		switch(last_cmd)
-		{
-		case cmd_ping_request:
-		{
-			uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
-			break;
-		}
-		case cmd_ping_response:
-		{
-			break;
-		}
-		case cmd_startAudio_request:
-		{
-			uart_log("=== Start Audio Request === %u\r\n",server_message_data[2]);
-			break;
-		}
-		case cmd_stopAudio_request:
-		{
-			break;
-		}
-		case cmd_startLive_request:
-		{
-			break;
-		}
-		case cmd_setRTC_request:
-		{
-			if(xSemaphoreTake(rtcMutex,1))
-			{
-				setDateTime(3);
-				xSemaphoreGive(rtcMutex);
-			}
-			else
-			{
-				LOG("Cant take RTC Mutex\r\n");
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
-}
+
 
 static inline uint8_t lte_start_recv_DMA(UART_HandleTypeDef *huart)
 {
@@ -259,6 +214,10 @@ static inline uint8_t lte_start_recv_DMA(UART_HandleTypeDef *huart)
 		if(hstat==HAL_BUSY)
 		{
 			HAL_UART_AbortReceive(huart);
+		}
+		if(hstat==HAL_ERROR)
+		{
+			HAL_UART_Abort(huart);
 		}
 		return 2;
 	}
@@ -361,9 +320,78 @@ static inline  HAL_StatusTypeDef lte_send(char* data, size_t sz)
 	if(hstat!=HAL_OK)
 	{
 		LOG("lte uart transmit error: %d \r\n",hstat);
+		HAL_UART_AbortTransmit(lte_param->huart);
 	}
 	return hstat;
 	//LOG("lte_sendCmd %d \r\n",hstat);
+}
+
+static inline void serverHandler()
+{
+	if(server_message_data[0]==0)
+	{
+		last_cmd=server_message_data[1];
+		switch(last_cmd)
+		{
+		case cmd_ping_request:
+		{
+			uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
+			msg->nmb=channels_number;
+			msg->cmd=cmd_ping_response;
+			msg->sz=256;
+			if(lte_send((char*)sendcmd,264)!=HAL_OK)
+			{
+				LOG("Error send PING Response \r\n");
+			}
+			pingTick=HAL_GetTick();
+			break;
+		}
+		case cmd_ping_response:
+		{
+			break;
+		}
+		case cmd_startAudio_request:
+		{
+			uart_log("=== Start Audio Request === %u\r\n",server_message_data[2]);
+			break;
+		}
+		case cmd_stopAudio_request:
+		{
+			break;
+		}
+		case cmd_startLive_request:
+		{
+			break;
+		}
+		case cmd_setRTC_request:
+		{
+			if(xSemaphoreTake(rtcMutex,1))
+			{
+				setDateTime(3);
+				xSemaphoreGive(rtcMutex);
+			}
+			else
+			{
+				LOG("Cant take RTC Mutex\r\n");
+			}
+			msg->nmb=channels_number;
+			msg->cmd=cmd_setRTC_response;
+			msg->sz=256;
+			if(lte_send((char*)sendcmd,264)==HAL_OK)
+			{
+				LOG("setRTC Response sent\r\n");
+			}
+			else
+			{
+				LOG("setRTC Response send error!\r\n");
+				break;
+			}
+			break;
+		}
+		default:
+			break;
+		}
+	}
 }
 
 static inline LTE_Status send_audio(char* data, int n)
@@ -671,6 +699,7 @@ static inline LTE_Status lte_start()
 
 }
 
+/*
 static inline int lte_connect()
 {
 	if(lte_tcp_open()!=1)
@@ -680,6 +709,7 @@ static inline int lte_connect()
 	}
 	return 1;
 }
+*/
 
 static inline int lte_stop()
 {
@@ -835,6 +865,65 @@ static inline void sendTerminalCommand()
 	 terminalbuf.size=0;
 }
 
+
+static inline void lte_connect()
+{
+
+	HAL_UART_Abort(lte_param->huart);
+	uart_log("Connecting to server ... \r\n");
+	while(lte_tcp_open()!=LTE_OK)
+	{
+		vTaskDelay(2000);
+	}
+	connected_to_server=1;
+	uart_log("OK, Connected to server. \r\n");
+
+	uint8_t rtcset=0;
+	uint8_t w_ct=0;
+	uint8_t rtc_ct=0;
+	if(connected_to_server==1 && transparent==1)
+	{
+		recvcmplt = lte_start_recv_DMA(lte_param->huart);
+		while(rtcset==0 && rtc_ct < 10)
+		{
+			if(recvcmplt==0)
+			{
+				while(recvcmplt==0 && w_ct<10)
+				{
+					vTaskDelay(100);
+					w_ct++;
+				}
+				if(recvcmplt > 0)
+				{
+					if(recvcmplt==1)
+					{
+						rtcset=1;
+						serverHandler();
+					}
+					recvcmplt=lte_start_recv_DMA(lte_param->huart);
+				}
+			}
+			rtc_ct++;
+			vTaskDelay(10);
+		}
+		if(rtc_ct==10)
+		{
+				LOG("Cant get RTC Set message\r\n");
+		}
+	}
+}
+
+static inline void lteReconnect()
+{
+	lte_pwr_off();
+	vTaskDelay(1000);
+	lte_pwr();
+	LOG("LTE powered ON, waiting ready!\r\n");
+	HAL_Delay(12000);
+	LOG("LTE ready!\r\n");
+	lte_connect();
+}
+
 void lteTaskRun(void* param)
 {
 	lte_param=(LTE_PARAM*)param;
@@ -846,17 +935,8 @@ void lteTaskRun(void* param)
 	msg->tag = 0x55aa;
 
 
-	send_flag=sf_Send;
+	send_flag=sf_Read;
 
-	/*
-	lte_pwr();
-	vTaskDelay(2000);
-	LOG("LTE powered ON, waiting ready!\r\n");
-	vTaskDelay(12000);
-	LOG("LTE ready!\r\n");
-	//*/
-
-	//*
 	if(lte_start()!=LTE_OK)
 	{
 		uart_log("Cannot open LTE network\r\n Please restartdevice. \r\n");
@@ -864,24 +944,10 @@ void lteTaskRun(void* param)
 	}
 
 	uart_log("LTE Task started\r\n");
-	uart_log("Connecting to server ... \r\n");
-	while(lte_tcp_open()!=LTE_OK)
-	{
-		vTaskDelay(2000);
-	}
-	connected_to_server=1;
-	uart_log("OK, Connected to server. \r\n");
-	//*/
 
+	lte_connect();
 
-	//*
-	if(connected_to_server==1 && transparent==1)
-	{
-		recvcmplt = lte_start_recv_DMA(lte_param->huart);
-	}
-	//*/
-
-
+	pingTick=HAL_GetTick();
 	for(;;)
 	{
 
@@ -931,7 +997,23 @@ void lteTaskRun(void* param)
 				}
 				recvcmplt=lte_start_recv_DMA(lte_param->huart);
 			}
+
+			uint32_t tick = HAL_GetTick();
+			if( (tick - pingTick) > 20000 )
+			{
+				LOG("No pings for 20s. Connections loss. trying reconect \r\n");
+				connected_to_server=0;
+				pingTick=tick;
+				HAL_UART_Abort(lte_param->huart);
+				continue;
+			}
+
 		//*/
+		}
+		else if(transparent==1)
+		{
+			lte_connect();
+			pingTick=HAL_GetTick();
 		}
 
 		//*	For vorking with terminal
