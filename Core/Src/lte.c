@@ -869,10 +869,28 @@ static inline void sendTerminalCommand()
 static inline void lte_connect()
 {
 
+	LOG("Checking transparent mode ... \r\n");
+	if(lte_check_transparent()==LTE_NO)
+	{
+		if(lte_transparent()==LTE_ERROR)
+		{
+			uart_log("ERROR: Can't set transparent mode \r\n");
+		}
+		else
+		{
+			uart_log("Swiched in transparrent mode\r\n");
+			transparent=1;
+		}
+	}
+
+
+
+
 	HAL_UART_Abort(lte_param->huart);
 	uart_log("Connecting to server ... \r\n");
 	while(lte_tcp_open()!=LTE_OK)
 	{
+		HAL_UART_Abort(lte_param->huart);
 		vTaskDelay(2000);
 	}
 	connected_to_server=1;
@@ -1005,12 +1023,22 @@ void lteTaskRun(void* param)
 				connected_to_server=0;
 				pingTick=tick;
 				HAL_UART_Abort(lte_param->huart);
+				if(lte_endtransparent()==LTE_OK)
+				{
+					transparent=0;
+				}
 				continue;
 			}
 
 		//*/
 		}
-		else if(transparent==1)
+		else if(connected_to_server==0 && transparent==1 )
+		{
+			lte_endtransparent();
+			transparent=0;
+			pingTick=HAL_GetTick();
+		}
+		else if(connected_to_server==0 && transparent==0 )
 		{
 			lte_connect();
 			pingTick=HAL_GetTick();
