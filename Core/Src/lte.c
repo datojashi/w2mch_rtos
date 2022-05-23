@@ -630,6 +630,7 @@ static inline LTE_Status lte_start()
 		return LTE_ERROR;
 
 
+	//*
 	LOG("Checking transparent mode ... \r\n");
 	if(lte_check_transparent()==LTE_NO)
 	{
@@ -645,6 +646,7 @@ static inline LTE_Status lte_start()
 	}
 
 	transparent=1;
+	//*/
 
 	LOG("Checking network ... \r\n");
 	result=lte_check_net();
@@ -866,27 +868,29 @@ static inline void sendTerminalCommand()
 }
 
 
-static inline void lte_connect()
+static inline LTE_Status lte_connect()
 {
 
+
+	HAL_UART_Abort(lte_param->huart);
+
+	//*
 	LOG("Checking transparent mode ... \r\n");
 	if(lte_check_transparent()==LTE_NO)
 	{
 		if(lte_transparent()==LTE_ERROR)
 		{
 			uart_log("ERROR: Can't set transparent mode \r\n");
+			return LTE_ERROR;
 		}
 		else
 		{
 			uart_log("Swiched in transparrent mode\r\n");
-			transparent=1;
 		}
 	}
+	transparent=1;
+	//*/
 
-
-
-
-	HAL_UART_Abort(lte_param->huart);
 	uart_log("Connecting to server ... \r\n");
 	while(lte_tcp_open()!=LTE_OK)
 	{
@@ -895,6 +899,10 @@ static inline void lte_connect()
 	}
 	connected_to_server=1;
 	uart_log("OK, Connected to server. \r\n");
+
+
+
+
 
 	uint8_t rtcset=0;
 	uint8_t w_ct=0;
@@ -1021,12 +1029,9 @@ void lteTaskRun(void* param)
 			{
 				LOG("No pings for 20s. Connections loss. trying reconect \r\n");
 				connected_to_server=0;
+				lte_tcp_close();
 				pingTick=tick;
 				HAL_UART_Abort(lte_param->huart);
-				if(lte_endtransparent()==LTE_OK)
-				{
-					transparent=0;
-				}
 				continue;
 			}
 
@@ -1038,8 +1043,9 @@ void lteTaskRun(void* param)
 			transparent=0;
 			pingTick=HAL_GetTick();
 		}
-		else if(connected_to_server==0 && transparent==0 )
+		else if(connected_to_server==0)
 		{
+			lte_tcp_close();
 			lte_connect();
 			pingTick=HAL_GetTick();
 		}
