@@ -994,6 +994,11 @@ void lteTaskRun(void* param)
 
 			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 			{
+				if(send_flag==sf_Reconect)
+				{
+					send_flag=sf_Read;
+				}
+
 				if(last_cmd==cmd_startAudio_request || last_cmd==cmd_startLive_request)
 				{
 					send_flag=sf_Read;
@@ -1039,9 +1044,14 @@ void lteTaskRun(void* param)
 		}
 		else if(connected_to_server==0 && transparent==1 )
 		{
-			lte_endtransparent();
-			transparent=0;
-			pingTick=HAL_GetTick();
+			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+			{
+				send_flag=sf_Reconect;
+				xSemaphoreGive(audioMutex);
+				lte_endtransparent();
+				transparent=0;
+				pingTick=HAL_GetTick();
+			}
 		}
 		else if(connected_to_server==0)
 		{
