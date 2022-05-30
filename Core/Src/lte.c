@@ -474,6 +474,14 @@ static inline LTE_Status lte_check_transparent()
 	return result;
 }
 
+static inline LTE_Status lte_check_transparent_config()
+{
+	char data[64];
+	size_t n=sprintf(data,"AT+CIPCCFG?\r\n");
+	LTE_Status result=processCommand(data, n);
+	return result;
+}
+
 
 static inline LTE_Status lte_transparent()
 {
@@ -502,6 +510,14 @@ static inline LTE_Status lte_check_net()
 		}
 	}
 	return result;
+}
+
+static inline LTE_Status lte_udp_open()
+{
+	char data[64];
+	size_t n=sprintf(data,"AT+CIPOPEN=0,\"UDP\",\"185.51.101.235\",5678\r\n");
+	LOG("%s",data);
+	return processCommand(data, n);
 }
 
 static inline LTE_Status lte_tcp_open()
@@ -630,8 +646,12 @@ static inline LTE_Status lte_start()
 		return LTE_ERROR;
 
 
+
 	//*
 	LOG("Checking transparent mode ... \r\n");
+
+	lte_check_transparent_config();
+
 	if(lte_check_transparent()==LTE_NO)
 	{
 		if(lte_transparent()==LTE_ERROR)
@@ -981,6 +1001,7 @@ void lteTaskRun(void* param)
 		{
 			if(uarterror==1)
 			{
+				HAL_UART_Abort(lte_param->huart);
 				if(lte_start_recv_DMA(lte_param->huart)==0)
 				{
 					uarterror=0;
@@ -1033,10 +1054,10 @@ void lteTaskRun(void* param)
 			if( (tick - pingTick) > 20000 )
 			{
 				LOG("No pings for 20s. Connections loss. trying reconect \r\n");
+				HAL_UART_Abort(lte_param->huart);
 				connected_to_server=0;
 				lte_tcp_close();
 				pingTick=tick;
-				HAL_UART_Abort(lte_param->huart);
 				continue;
 			}
 
