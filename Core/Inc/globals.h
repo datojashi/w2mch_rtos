@@ -40,13 +40,14 @@ enum  CMD
     cmd_None    =0x00ffU
 };
 
-enum SEND_FLAG{
+enum STATUS_FLAG{
 	sf_Read	= 0x00U,
 	sf_Send = 0x01U,
 	sf_ReadError = 0x02,
 	sf_No = 0x03,
 	sf_Live = 0x04,
 	sf_Reconect=0x05,
+	sf_Error=0x06
 };
 
 struct __attribute__((__packed__)) COMMAND

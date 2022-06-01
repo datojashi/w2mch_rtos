@@ -15,7 +15,7 @@
 #define MAX_LTE_RESPONSE_LINE_LENGTH 64
 #define MAX_LTE_RESPONSE_RAW_LENGTH (MAX_LTE_RESPONSE_LINES*MAX_LTE_RESPONSE_LINE_LENGTH)
 
-
+#define RECONECT_MAX_TRY	50
 
 
 LTE_PARAM* lte_param;
@@ -32,7 +32,6 @@ volatile uint8_t lte_response_size=0;
 volatile uint8_t connected_to_server=0;
 
 uint8_t lte_status=0;
-uint8_t transparent=0;
 
 char server_message_data[256];
 volatile uint8_t recvcmplt=2;
@@ -47,7 +46,7 @@ struct MESSAGE* msg;
 uint8_t last_cmd=cmd_None;
 
 extern RTC_HandleTypeDef hrtc;
-extern volatile uint8_t send_flag;
+extern volatile uint8_t status_flag;
 extern uint8_t* readbuf;
 
 //extern uint8_t* sendbuf;
@@ -66,7 +65,7 @@ void lteRecvHandler()
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	uart_log("** Cplt **\r\n");
+	//uart_log("** Cplt **\r\n");
 	printHex(server_message_data, 8);
 	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
 	recvcmplt=1;
@@ -74,7 +73,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
-	uart_log("** Half **\r\n");
+	//uart_log("** Half **\r\n");
 	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
 	//recvcmplt=1;
 }
@@ -84,8 +83,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 	if(huart==lte_param->huart)
 	{
 		uart_log("LTE UART Error!, Error code: %d \r\n", huart->ErrorCode);
-		huart->Instance->ISR=0;
-		HAL_UART_Abort(huart);
+		//huart->Instance->ISR=0;
+		//HAL_UART_Abort(huart);
 		uarterror=1;
 	}
 }
@@ -665,7 +664,7 @@ static inline LTE_Status lte_start()
 		}
 	}
 
-	transparent=1;
+
 	//*/
 
 	LOG("Checking network ... \r\n");
@@ -746,18 +745,16 @@ static inline int lte_stop()
 	}
 	//*/
 	vTaskDelay(1000);
-	if(transparent)
+
+
+	if(lte_endtransparent()==LTE_OK)
 	{
-		if(lte_endtransparent()==LTE_OK)
-		{
-			transparent=0;
-			uart_log("End transparent mode\r\n");
-		}
-		else
-		{
-			uart_log("Error End transparent mode\r\n");
-			return LTE_ERROR;
-		}
+		uart_log("End transparent mode\r\n");
+	}
+	else
+	{
+		uart_log("Error End transparent mode\r\n");
+		return LTE_ERROR;
 	}
 
 	if(lte_tcp_close()==LTE_OK)
@@ -804,7 +801,7 @@ static inline void lte_pwr()
 
 static inline void sendTerminalCommand()
 {
-	if(transparent==0)
+	if(lte_check_transparent()==LTE_NO)
 	{
 		if(strcmp(terminalbuf.buf,"ping")==0)
 		{
@@ -891,7 +888,7 @@ static inline void sendTerminalCommand()
 static inline LTE_Status lte_connect()
 {
 
-
+	LTE_Status result = LTE_OK;
 	HAL_UART_Abort(lte_param->huart);
 
 	//*
@@ -908,14 +905,19 @@ static inline LTE_Status lte_connect()
 			uart_log("Swiched in transparrent mode\r\n");
 		}
 	}
-	transparent=1;
 	//*/
 
+	uint8_t try_ct=0;
 	uart_log("Connecting to server ... \r\n");
-	while(lte_tcp_open()!=LTE_OK)
+	while(lte_tcp_open()!=LTE_OK && try_ct<RECONECT_MAX_TRY)
 	{
 		HAL_UART_Abort(lte_param->huart);
 		vTaskDelay(2000);
+		try_ct++;
+	}
+	if(try_ct==RECONECT_MAX_TRY)
+	{
+		return LTE_ERROR;
 	}
 	connected_to_server=1;
 	uart_log("OK, Connected to server. \r\n");
@@ -927,47 +929,70 @@ static inline LTE_Status lte_connect()
 	uint8_t rtcset=0;
 	uint8_t w_ct=0;
 	uint8_t rtc_ct=0;
-	if(connected_to_server==1 && transparent==1)
+	if(connected_to_server==1)
 	{
-		recvcmplt = lte_start_recv_DMA(lte_param->huart);
-		while(rtcset==0 && rtc_ct < 10)
+		LOG("Waiting initial message from server ... \r\n");
+		while(rtcset==0 && w_ct < 20)
 		{
-			if(recvcmplt==0)
+			recvcmplt=0;
+			if(lte_start_recv_DMA(lte_param->huart)==0)
 			{
-				while(recvcmplt==0 && w_ct<10)
+				while(recvcmplt==0 && rtc_ct < 5)
 				{
-					vTaskDelay(100);
-					w_ct++;
+					vTaskDelay(1000);
 				}
-				if(recvcmplt > 0)
+				if(recvcmplt==1)
 				{
-					if(recvcmplt==1)
-					{
-						rtcset=1;
-						serverHandler();
-					}
-					recvcmplt=lte_start_recv_DMA(lte_param->huart);
+					rtcset=1;
+					recvcmplt=0;
+					serverHandler();
+					LOG(" ***** RTC Set msg received %d %d \r\n", server_message_data[1], rtc_ct);
 				}
+				else
+					break;
+
 			}
-			rtc_ct++;
-			vTaskDelay(10);
+			vTaskDelay(100);
+			w_ct++;
 		}
-		if(rtc_ct==10)
+		if(rtcset==0)
 		{
-				LOG("Cant get RTC Set message\r\n");
+			LOG("Cant get RTC Set message\r\n");
 		}
 	}
+	return result;
 }
 
-static inline void lteReconnect()
+static inline void lte_restart()
 {
-	lte_pwr_off();
-	vTaskDelay(1000);
+	lte_pwr();
+	LOG("LTE powered OFF, waiting ready!\r\n");
+	vTaskDelay(20000);
 	lte_pwr();
 	LOG("LTE powered ON, waiting ready!\r\n");
-	HAL_Delay(12000);
+	HAL_Delay(20000);
 	LOG("LTE ready!\r\n");
 	lte_connect();
+}
+
+uint8_t getStatusFlag()
+{
+	uint8_t result=sf_Error;
+	if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+	{
+		result=status_flag;
+		xSemaphoreGive(audioMutex);
+    }
+	return result;
+}
+
+void setStatusFlag(uint8_t sf)
+{
+	if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+	{
+		status_flag=sf;
+		xSemaphoreGive(audioMutex);
+    }
 }
 
 void lteTaskRun(void* param)
@@ -981,7 +1006,7 @@ void lteTaskRun(void* param)
 	msg->tag = 0x55aa;
 
 
-	send_flag=sf_Read;
+	status_flag=sf_Read;
 
 	if(lte_start()!=LTE_OK)
 	{
@@ -994,13 +1019,15 @@ void lteTaskRun(void* param)
 	lte_connect();
 
 	pingTick=HAL_GetTick();
+	recvcmplt=lte_start_recv_DMA(lte_param->huart);
 	for(;;)
 	{
 
-		if(connected_to_server==1 && transparent==1)
+		if(connected_to_server==1)
 		{
 			if(uarterror==1)
 			{
+				//LOG("===== uarterror=1 \r\n");
 				HAL_UART_Abort(lte_param->huart);
 				if(lte_start_recv_DMA(lte_param->huart)==0)
 				{
@@ -1015,27 +1042,27 @@ void lteTaskRun(void* param)
 
 			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 			{
-				if(send_flag==sf_Reconect)
+				if(status_flag==sf_Reconect)
 				{
-					send_flag=sf_Read;
+					status_flag=sf_Read;
 				}
 
 				if(last_cmd==cmd_startAudio_request || last_cmd==cmd_startLive_request)
 				{
-					send_flag=sf_Read;
+					status_flag=sf_Read;
 				}
 
 				if(last_cmd==cmd_stopAudio_request || last_cmd==cmd_stopLive_response)
 				{
-					send_flag=sf_No;
+					status_flag=sf_No;
 				}
 
-				if(send_flag==sf_Send)
+				if(status_flag==sf_Send)
 				{
 					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,1);
 					send_audio((char*)readbuf,24);
 					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
-					send_flag=sf_Read;
+					status_flag=sf_Read;
 				}
 				xSemaphoreGive(audioMutex);
 			}
@@ -1056,29 +1083,26 @@ void lteTaskRun(void* param)
 				LOG("No pings for 20s. Connections loss. trying reconect \r\n");
 				HAL_UART_Abort(lte_param->huart);
 				connected_to_server=0;
-				lte_tcp_close();
 				pingTick=tick;
+				setStatusFlag(sf_Reconect);
 				continue;
 			}
 
 		//*/
 		}
-		else if(connected_to_server==0 && transparent==1 )
+		else
 		{
-			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+			if(getStatusFlag()!=sf_No)
 			{
-				send_flag=sf_Reconect;
-				xSemaphoreGive(audioMutex);
 				lte_endtransparent();
-				transparent=0;
+				lte_tcp_close();
+				if(lte_connect()==LTE_ERROR)
+				{
+					LOG("Error reconnecting, trying restart LTE ...\r\n");
+					lte_restart();
+				}
 				pingTick=HAL_GetTick();
 			}
-		}
-		else if(connected_to_server==0)
-		{
-			lte_tcp_close();
-			lte_connect();
-			pingTick=HAL_GetTick();
 		}
 
 		//*	For vorking with terminal
@@ -1094,9 +1118,10 @@ void lteTaskRun(void* param)
 
 		if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
 		{
-			uart_log("User Button clicked, transparent=%u stoping ...\r\n",transparent);
+			uart_log("User Button clicked,  stoping ...\r\n");
 			lte_stop();
 			lte_pwr_off();
+			setStatusFlag(sf_No);
 			vTaskDelay(100);
 			while(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)!=0);
 			uart_log("Stoped!\r\n");

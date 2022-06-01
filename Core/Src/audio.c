@@ -35,7 +35,7 @@ volatile int samplebuf_offset=0;
 volatile uint8_t sampleBufReady=0;
 volatile uint8_t wrComplete=0;
 
-volatile uint8_t send_flag=sf_No;
+volatile uint8_t status_flag=sf_No;
 
 volatile uint16_t signal_level[4]={2048,2048,2048,2048};
 
@@ -283,24 +283,24 @@ void audioTaskRun(void* param)
 		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 		{
 #ifdef __SD__
-			switch(send_flag)
+			switch(status_flag)
 			{
 			case sf_Read:
 			{
-				send_flag=readAudioData();
+				status_flag=readAudioData();
 				break;
 			}
 			case sf_ReadError:
 			{
 				LOG("Disk read error, Abort!\r\n");
 				HAL_SD_Abort(audio_param->hsd);
-				send_flag=sf_Read;
+				status_flag=sf_Read;
 				break;
 			}
 			case sf_Live:
 			{
 				memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
-				send_flag=sf_Send;
+				status_flag=sf_Send;
 				break;
 			}
 			default:
@@ -308,11 +308,11 @@ void audioTaskRun(void* param)
 			}
 			xSemaphoreGive(audioMutex);
 #else
-			if(send_flag==0)
+			if(status_flag==0)
 			{
 				memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
 				memset(readbuf, 0xff, ALAW_BUFFER_SIZE);
-				send_flag=sf_Send;
+				status_flag=sf_Send;
 			}
 			xSemaphoreGive(audioMutex);
 			while(sampleBufReady==0) vTaskDelay(1);
