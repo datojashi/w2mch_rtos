@@ -325,73 +325,7 @@ static inline  HAL_StatusTypeDef lte_send(char* data, size_t sz)
 	//LOG("lte_sendCmd %d \r\n",hstat);
 }
 
-static inline void serverHandler()
-{
-	if(server_message_data[0]==0)
-	{
-		last_cmd=server_message_data[1];
-		switch(last_cmd)
-		{
-		case cmd_ping_request:
-		{
-			uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
-			msg->nmb=channels_number;
-			msg->cmd=cmd_ping_response;
-			msg->sz=256;
-			if(lte_send((char*)sendcmd,264)!=HAL_OK)
-			{
-				LOG("Error send PING Response \r\n");
-			}
-			pingTick=HAL_GetTick();
-			break;
-		}
-		case cmd_ping_response:
-		{
-			break;
-		}
-		case cmd_startAudio_request:
-		{
-			uart_log("=== Start Audio Request === %u\r\n",server_message_data[2]);
-			break;
-		}
-		case cmd_stopAudio_request:
-		{
-			break;
-		}
-		case cmd_startLive_request:
-		{
-			break;
-		}
-		case cmd_setRTC_request:
-		{
-			if(xSemaphoreTake(rtcMutex,1))
-			{
-				setDateTime(3);
-				xSemaphoreGive(rtcMutex);
-			}
-			else
-			{
-				LOG("Cant take RTC Mutex\r\n");
-			}
-			msg->nmb=channels_number;
-			msg->cmd=cmd_setRTC_response;
-			msg->sz=256;
-			if(lte_send((char*)sendcmd,264)==HAL_OK)
-			{
-				LOG("setRTC Response sent\r\n");
-			}
-			else
-			{
-				LOG("setRTC Response send error!\r\n");
-				break;
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
-}
+
 
 static inline LTE_Status send_audio(char* data, int n)
 {
@@ -402,14 +336,9 @@ static inline LTE_Status send_audio(char* data, int n)
 	{
 		d=data+512*i;
 		memcpy(sendbuf,d,512);
-
-		//msg->tag=0x55aa;
 		msg->nmb=channels_number;
 		msg->cmd=cmd_AudioData_request;
 		msg->sz=512;
-		//sendcmd[2]=channels_number;
-		//sendcmd[3]=cmd_AudioData_request;
-		//*((uint32_t*)&sendcmd[4])=512;
 		if(lte_send((char*)sendcmd,560)==HAL_OK)
 		{
 			result=LTE_OK;
@@ -884,6 +813,128 @@ static inline void sendTerminalCommand()
 	 terminalbuf.size=0;
 }
 
+static uint8_t getStatusFlag(uint8_t* status)
+{
+	if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+	{
+		*status=status_flag;
+		xSemaphoreGive(audioMutex);
+		return 1;
+    }
+	else
+		return 0;
+}
+
+static uint8_t setStatusFlag(uint8_t sf)
+{
+	if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+	{
+		status_flag=sf;
+		xSemaphoreGive(audioMutex);
+		return 1;
+    }
+	else
+		return 0;
+}
+
+static inline void serverHandler()
+{
+	if(server_message_data[0]==0)
+	{
+		last_cmd=server_message_data[1];
+		switch(last_cmd)
+		{
+		case cmd_ping_request:
+		{
+			uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
+			msg->nmb=channels_number;
+			msg->cmd=cmd_ping_response;
+			msg->sz=256;
+			if(lte_send((char*)sendcmd,264)!=HAL_OK)
+			{
+				LOG("Error send PING Response \r\n");
+			}
+			pingTick=HAL_GetTick();
+			break;
+		}
+		case cmd_ping_response:
+		{
+			break;
+		}
+		case cmd_startAudio_request:
+		{
+			uart_log("=== Start Audio Request === %u\r\n",server_message_data[2]);
+			while(!setStatusFlag(sf_Read)){
+				vTaskDelay(2);
+			}
+			msg->nmb=channels_number;
+			msg->cmd=cmd_startAudio_response;
+			msg->sz=256;
+			if(lte_send((char*)sendcmd,264)!=HAL_OK)
+			{
+				LOG("Error send startAudio Response \r\n");
+			}
+			else
+			{
+				LOG("startAudio response sent \r\n");
+			}
+			break;
+		}
+		case cmd_stopAudio_request:
+		{
+			uart_log("=== Stop Audio Request === %u\r\n",server_message_data[2]);
+			while(!setStatusFlag(sf_No)){
+				vTaskDelay(2);
+			}
+			msg->nmb=channels_number;
+			msg->cmd=cmd_stopAudio_response;
+			msg->sz=256;
+			if(lte_send((char*)sendcmd,264)!=HAL_OK)
+			{
+				LOG("Error send stopAudio Response \r\n");
+			}
+			else
+			{
+				LOG("stopAudio response sent \r\n");
+			}
+			break;
+		}
+		case cmd_startLive_request:
+		{
+			break;
+		}
+		case cmd_setRTC_request:
+		{
+			if(xSemaphoreTake(rtcMutex,1))
+			{
+				setDateTime(3);
+				xSemaphoreGive(rtcMutex);
+			}
+			else
+			{
+				LOG("Cant take RTC Mutex\r\n");
+			}
+			msg->nmb=channels_number;
+			msg->cmd=cmd_setRTC_response;
+			msg->sz=256;
+			if(lte_send((char*)sendcmd,264)==HAL_OK)
+			{
+				LOG("setRTC Response sent\r\n");
+			}
+			else
+			{
+				LOG("setRTC Response send error!\r\n");
+				break;
+			}
+			break;
+		}
+		default:
+			break;
+		}
+		pingTick = HAL_GetTick();
+	}
+
+}
 
 static inline LTE_Status lte_connect()
 {
@@ -975,25 +1026,7 @@ static inline void lte_restart()
 	lte_connect();
 }
 
-uint8_t getStatusFlag()
-{
-	uint8_t result=sf_Error;
-	if(xSemaphoreTake(audioMutex,1)==pdTRUE)
-	{
-		result=status_flag;
-		xSemaphoreGive(audioMutex);
-    }
-	return result;
-}
 
-void setStatusFlag(uint8_t sf)
-{
-	if(xSemaphoreTake(audioMutex,1)==pdTRUE)
-	{
-		status_flag=sf;
-		xSemaphoreGive(audioMutex);
-    }
-}
 
 void lteTaskRun(void* param)
 {
@@ -1006,7 +1039,7 @@ void lteTaskRun(void* param)
 	msg->tag = 0x55aa;
 
 
-	status_flag=sf_Read;
+	status_flag=sf_No;
 
 	if(lte_start()!=LTE_OK)
 	{
@@ -1042,10 +1075,6 @@ void lteTaskRun(void* param)
 
 			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 			{
-				if(status_flag==sf_Reconect)
-				{
-					status_flag=sf_Read;
-				}
 
 				if(last_cmd==cmd_startAudio_request || last_cmd==cmd_startLive_request)
 				{
@@ -1084,7 +1113,6 @@ void lteTaskRun(void* param)
 				HAL_UART_Abort(lte_param->huart);
 				connected_to_server=0;
 				pingTick=tick;
-				setStatusFlag(sf_Reconect);
 				continue;
 			}
 
@@ -1092,8 +1120,10 @@ void lteTaskRun(void* param)
 		}
 		else
 		{
-			if(getStatusFlag()!=sf_No)
+			uint8_t status;
+			if(getStatusFlag(&status))
 			{
+				LOG("Reconnecting ... \r\n");
 				lte_endtransparent();
 				lte_tcp_close();
 				if(lte_connect()==LTE_ERROR)
@@ -1101,6 +1131,7 @@ void lteTaskRun(void* param)
 					LOG("Error reconnecting, trying restart LTE ...\r\n");
 					lte_restart();
 				}
+				setStatusFlag(status);
 				pingTick=HAL_GetTick();
 			}
 		}

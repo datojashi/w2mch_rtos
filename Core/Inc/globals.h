@@ -46,7 +46,6 @@ enum STATUS_FLAG{
 	sf_ReadError = 0x02,
 	sf_No = 0x03,
 	sf_Live = 0x04,
-	sf_Reconect=0x05,
 	sf_Error=0x06
 };
 
