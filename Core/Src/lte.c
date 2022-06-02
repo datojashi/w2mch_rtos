@@ -905,6 +905,7 @@ static inline void serverHandler()
 		}
 		case cmd_setRTC_request:
 		{
+			LOG(" ***** RTC Set msg received %d %d \r\n", server_message_data[1]);
 			if(xSemaphoreTake(rtcMutex,1))
 			{
 				setDateTime(3);
@@ -997,7 +998,6 @@ static inline LTE_Status lte_connect()
 					rtcset=1;
 					recvcmplt=0;
 					serverHandler();
-					LOG(" ***** RTC Set msg received %d %d \r\n", server_message_data[1], rtc_ct);
 				}
 				else
 					break;
@@ -1132,7 +1132,9 @@ void lteTaskRun(void* param)
 					lte_restart();
 				}
 				setStatusFlag(status);
+				recvcmplt=lte_start_recv_DMA(lte_param->huart);
 				pingTick=HAL_GetTick();
+				LOG("Reconnected. \r\n");
 			}
 		}
 
