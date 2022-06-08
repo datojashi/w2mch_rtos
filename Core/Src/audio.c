@@ -20,9 +20,13 @@
 AUDIO_PARAM* audio_param;
 REC_SETTS rec_setts;
 
-volatile static int current_sector=DATA_SECTOR;
-volatile static int current_read_sector=DATA_SECTOR;
-volatile static int current_clock_sector=CLOCK_SECTOR;
+volatile  uint32_t settings_sector=SETTINGS_SECTOR;
+volatile  uint32_t clock_sector=CLOCK_SECTOR;
+volatile  uint32_t data_sector=DATA_SECTOR;
+
+volatile  uint32_t current_sector=DATA_SECTOR;
+volatile  uint32_t current_read_sector=DATA_SECTOR;
+volatile  uint32_t current_clock_sector=CLOCK_SECTOR;
 
 uint16_t* samplebuf;
 uint8_t* samplebufByte;
@@ -35,7 +39,8 @@ volatile int samplebuf_offset=0;
 volatile uint8_t sampleBufReady=0;
 volatile uint8_t wrComplete=0;
 
-volatile uint8_t status_flag=sf_No;
+volatile uint8_t status_flag=sf_waitSettings;
+
 
 volatile uint16_t signal_level[4]={2048,2048,2048,2048};
 
@@ -141,13 +146,13 @@ static uint8_t  writeAudioData()
 		else
 		{
 			//current_sector=current_sector+ALAW_BUFFER_SECTORS;
-			LOG("Disk write error! current_sector=%d, sct=%d, status=%d, error=%d \r\n",current_sector,ALAW_BUFFER_SECTORS,stat,audio_param->hsd->ErrorCode);
+			LOG("Disk write error! current_sector=%d, sct=%u, status=%d, error=%d \r\n",current_sector,ALAW_BUFFER_SECTORS,stat,audio_param->hsd->ErrorCode);
 			return 0;
 		}
 	}
 	else
 	{
-		LOG("Disk overflow! current_sector=%d, sct=%d, totalsectors=%d \r\n", current_sector, ALAW_BUFFER_SIZE/512, rec_setts.totalSectors);
+		LOG("Disk overflow! current_sector=%u, sct=%d, totalsectors=%u \r\n", current_sector, ALAW_BUFFER_SIZE/512, rec_setts.totalSectors);
 		return 0;
 	}
 }
@@ -221,18 +226,27 @@ void audioTaskRun(void* param)
 
 
 
-	//sendcmd[0]=0xaa;
-	//sendcmd[1]=0x55;
 
-	//LOG("SRAM1 = %x",audio_param->sram1);
+
+
+
 
 	channels_number=audio_param->hadc->Init.NbrOfConversion;
 
 	HAL_GPIO_WritePin(TEST2_GPIO_Port, TEST2_Pin, 0);
-	vTaskDelay(4000);
+	vTaskDelay(1000);
+	while(1)
+	{
+		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
+		{
+			uint8_t c=status_flag;
+			xSemaphoreGive(audioMutex);
+			if(c!=sf_waitSettings) break;
+		}
+		vTaskDelay(100);
+	}
 
 	HAL_StatusTypeDef result=HAL_ADC_Start_DMA(audio_param->hadc, (uint32_t*)samplebuf, SAMPLE_BUFFER_SIZE/2);
-	//HAL_StatusTypeDef result=HAL_ADC_Start_IT(audio_param->hadc);
 	if(result==HAL_OK)
 	{
 		  uart_log("ADC started in DMA mode, %d Channels, OK \r\n",channels_number);

@@ -36,6 +36,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+// 591411751
+
 typedef struct
 {
 	uint8_t mode;

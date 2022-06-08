@@ -49,6 +49,11 @@ extern RTC_HandleTypeDef hrtc;
 extern volatile uint8_t status_flag;
 extern uint8_t* readbuf;
 
+extern volatile  uint32_t settings_sector;
+extern volatile  uint32_t clock_sector;
+extern volatile  uint32_t data_sector;
+
+
 //extern uint8_t* sendbuf;
 //extern uint8_t* sendcmd;
 
@@ -730,8 +735,7 @@ static inline void lte_pwr()
 
 static inline void sendTerminalCommand()
 {
-	if(lte_check_transparent()==LTE_NO)
-	{
+
 		if(strcmp(terminalbuf.buf,"ping")==0)
 		{
 			lte_ping();
@@ -805,11 +809,7 @@ static inline void sendTerminalCommand()
 			processCommand(terminalbuf.buf,terminalbuf.size+2);
 			//uart_log("Invalid command \"%s\" %d\r\n",terminalbuf.buf,terminalbuf.size);
 		}
-	 }
-	 else
-	 {
-		 send_audio(terminalbuf.buf,terminalbuf.size);
-	 }
+
 	 terminalbuf.size=0;
 }
 
@@ -846,15 +846,22 @@ static inline void serverHandler()
 		{
 		case cmd_ping_request:
 		{
-			uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
-			msg->nmb=channels_number;
-			msg->cmd=cmd_ping_response;
-			msg->sz=256;
-			if(lte_send((char*)sendcmd,264)!=HAL_OK)
+			if(server_message_data[3]==0)
 			{
-				LOG("Error send PING Response \r\n");
+				uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
+				msg->nmb=channels_number;
+				msg->cmd=cmd_ping_response;
+				msg->sz=256;
+				if(lte_send((char*)sendcmd,264)!=HAL_OK)
+				{
+					LOG("Error send PING Response \r\n");
+				}
+				pingTick=HAL_GetTick();
 			}
-			pingTick=HAL_GetTick();
+			else
+			{
+				pingTick=HAL_GetTick();
+			}
 			break;
 		}
 		case cmd_ping_response:
@@ -915,6 +922,21 @@ static inline void serverHandler()
 			{
 				LOG("Cant take RTC Mutex\r\n");
 			}
+			if(xSemaphoreTake(audioMutex,1))
+			{
+				settings_sector=*((uint32_t*)(server_message_data+12));
+				clock_sector=*((uint32_t*)(server_message_data+16));
+				data_sector=*((uint32_t*)(server_message_data+20));
+				status_flag=sf_No;
+				xSemaphoreGive(audioMutex);
+
+				LOG("Sector Settings(settings,clock,data) %u %u %u \r\n",settings_sector,clock_sector,data_sector);
+			}
+			else
+			{
+				LOG("Cant take RTC Mutex\r\n");
+			}
+
 			msg->nmb=channels_number;
 			msg->cmd=cmd_setRTC_response;
 			msg->sz=256;
@@ -927,6 +949,7 @@ static inline void serverHandler()
 				LOG("setRTC Response send error!\r\n");
 				break;
 			}
+
 			break;
 		}
 		default:
@@ -1039,7 +1062,30 @@ void lteTaskRun(void* param)
 	msg->tag = 0x55aa;
 
 
-	status_flag=sf_No;
+	//status_flag=sf_No;
+
+
+	if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
+	{
+		for(;;)
+		{
+			if(xSemaphoreTake(terminalMutex,1)==pdTRUE)
+			{
+				LOG("---- 1\r\n");
+				if(terminalbuf.size != 0)
+				{
+					LOG("---- 2\r\n");
+					LOG("*** %s\r\n", terminalbuf.buf);
+					HAL_UART_Abort(lte_param->huart);
+					sendTerminalCommand();
+				}
+				xSemaphoreGive(terminalMutex);
+			}
+			vTaskDelay(10);
+			continue;
+		}
+	}
+
 
 	if(lte_start()!=LTE_OK)
 	{
@@ -1090,6 +1136,7 @@ void lteTaskRun(void* param)
 				{
 					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,1);
 					send_audio((char*)readbuf,24);
+					//while(recvcmplt==0);
 					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
 					status_flag=sf_Read;
 				}
@@ -1137,17 +1184,6 @@ void lteTaskRun(void* param)
 				LOG("Reconnected. \r\n");
 			}
 		}
-
-		//*	For vorking with terminal
-		if(xSemaphoreTake(terminalMutex,1)==pdTRUE)
-		{
-			if(terminalbuf.size != 0)
-			{
-				sendTerminalCommand();
-			}
-			xSemaphoreGive(terminalMutex);
-		}
-		//*/
 
 		if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
 		{
