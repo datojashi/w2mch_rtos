@@ -8,7 +8,9 @@
 #ifndef INC_LTE_H_
 #define INC_LTE_H_
 
-#define BAUD_RATE 921600//3200000
+//#define BAUD_RATE 921600
+#define BAUD_RATE 3200000
+//#define BAUD_RATE 3686400
 
 typedef enum
 {

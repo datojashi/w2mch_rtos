@@ -62,6 +62,8 @@ extern uint8_t channels_number;
 uint8_t pData[256];
 uint32_t pingTick=0;
 
+uint32_t baud_rate=115200;
+
 void lteRecvHandler()
 {
 	HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
@@ -534,29 +536,43 @@ static inline int lte_setBoudRate(int br)
 	return processCommand(data, n);
 }
 
-static inline LTE_Status change_baudrate(uint32_t baudrate)
+static inline LTE_Status set_baudrate(uint32_t br)
 {
 	LTE_Status result=LTE_NO;
-	result=lte_setBoudRate(baudrate);
+	result=lte_setBoudRate(br);
 	if(result==LTE_NO)
 	{
-		uart_log("ERROR: LTE Module can't set boudrate %d \r\n", baudrate);
+		uart_log("ERROR: LTE Module can't set boudrate %d \r\n", br);
 		return LTE_ERROR;
 	}
-	uart_log("LTE Module boudrate changed to %d, OK. \r\n", baudrate);
+	uart_log("LTE Module boudrate changed to %d, OK. \r\n", br);
 
 	HAL_UART_Abort(lte_param->huart);
 	HAL_UART_DeInit(lte_param->huart);
 
 
-	lte_param->huart->Init.BaudRate = baudrate;
+	lte_param->huart->Init.BaudRate = br;
 	if(HAL_UART_Init(lte_param->huart)!=HAL_OK)
 	{
-		uart_log("UART_LTE can't set boudrate %d \r\n",baudrate);
+		uart_log("UART_LTE can't set boudrate %d \r\n",br);
 		return LTE_ERROR;
 	}
-	uart_log("UART_LTE boudrate changed to %d, OK. \r\n", baudrate);
+	uart_log("UART_LTE boudrate changed to %d, OK. \r\n", br);
+	baud_rate=br;
 	return LTE_OK;
+}
+
+static inline LTE_Status change_boudrate(uint32_t br)
+{
+	LTE_Status result=LTE_ERROR;
+	lte_endtransparent();
+	result=set_baudrate(br);
+	if(result!=LTE_OK)
+	{
+		return result;
+	}
+	result=lte_transparent();
+	return result;
 }
 
 static inline LTE_Status lte_start()
@@ -575,7 +591,7 @@ static inline LTE_Status lte_start()
 	}
 	uart_log("LTE Communication with 115000 boudrate oK, Changing boudrate... \r\n");
 
-	if(change_baudrate(BAUD_RATE)!=LTE_OK)
+	if(set_baudrate(BAUD_RATE)!=LTE_OK)
 		return LTE_ERROR;
 
 
@@ -714,7 +730,7 @@ static inline int lte_stop()
 	}
 
 
-	change_baudrate(115200);
+	set_baudrate(115200);
 
 	return LTE_OK;
 }
@@ -792,11 +808,11 @@ static inline void sendTerminalCommand()
 		}
 		else if(strcmp(terminalbuf.buf,"brhi")==0)
 		{
-			change_baudrate(BAUD_RATE);
+			set_baudrate(BAUD_RATE);
 		}
 		else if(strcmp(terminalbuf.buf,"brlo")==0)
 		{
-			change_baudrate(115200);
+			set_baudrate(115200);
 		}
 		else if(strcmp(terminalbuf.buf,"pwr")==0)
 		{
@@ -928,9 +944,17 @@ static inline void serverHandler()
 				clock_sector=*((uint32_t*)(server_message_data+16));
 				data_sector=*((uint32_t*)(server_message_data+20));
 				status_flag=sf_No;
+				/*
+				uint32_t br=*((uint32_t*)(server_message_data+24));
+				if(br!=baud_rate)
+				{
+					change_boudrate(br);
+				}
+				*/
 				xSemaphoreGive(audioMutex);
 
-				LOG("Sector Settings(settings,clock,data) %u %u %u \r\n",settings_sector,clock_sector,data_sector);
+				LOG("Sector Settings(settings,clock,data) settings_secor=%u clock_sector=%u"
+						"data_sector=%u baud_rate=%u \r\n",settings_sector,clock_sector,data_sector, baud_rate);
 			}
 			else
 			{
@@ -1049,6 +1073,29 @@ static inline void lte_restart()
 	lte_connect();
 }
 
+static inline void lte_reconnect()
+{
+	uint8_t status;
+	if(getStatusFlag(&status))
+	{
+		LOG("Reconnecting ... \r\n");
+		lte_endtransparent();
+		lte_tcp_close();
+		if(lte_connect()==LTE_ERROR)
+		{
+			LOG("Error reconnecting, trying restart LTE ...\r\n");
+			lte_restart();
+		}
+		setStatusFlag(status);
+		recvcmplt=lte_start_recv_DMA(lte_param->huart);
+		pingTick=HAL_GetTick();
+		LOG("Reconnected. \r\n");
+	}
+	else
+	{
+		LOG("Error start reconnecting, can't get status flag\r\n");
+	}
+}
 
 
 void lteTaskRun(void* param)
@@ -1106,7 +1153,6 @@ void lteTaskRun(void* param)
 		{
 			if(uarterror==1)
 			{
-				//LOG("===== uarterror=1 \r\n");
 				HAL_UART_Abort(lte_param->huart);
 				if(lte_start_recv_DMA(lte_param->huart)==0)
 				{
@@ -1143,7 +1189,6 @@ void lteTaskRun(void* param)
 				xSemaphoreGive(audioMutex);
 			}
 
-		//*
 			if(recvcmplt > 0)
 			{
 				if(recvcmplt==1)
@@ -1162,27 +1207,10 @@ void lteTaskRun(void* param)
 				pingTick=tick;
 				continue;
 			}
-
-		//*/
 		}
 		else
 		{
-			uint8_t status;
-			if(getStatusFlag(&status))
-			{
-				LOG("Reconnecting ... \r\n");
-				lte_endtransparent();
-				lte_tcp_close();
-				if(lte_connect()==LTE_ERROR)
-				{
-					LOG("Error reconnecting, trying restart LTE ...\r\n");
-					lte_restart();
-				}
-				setStatusFlag(status);
-				recvcmplt=lte_start_recv_DMA(lte_param->huart);
-				pingTick=HAL_GetTick();
-				LOG("Reconnected. \r\n");
-			}
+			lte_reconnect();
 		}
 
 		if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
