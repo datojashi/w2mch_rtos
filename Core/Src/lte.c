@@ -70,9 +70,7 @@ void lteRecvHandler()
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	//uart_log("** Cplt **\r\n");
-	printHex(server_message_data, 8);
-	//HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
+	//printHex(server_message_data, 8);
 	recvcmplt=1;
 }
 
@@ -187,18 +185,28 @@ static inline  void lte_response_log()
 
 static inline void setDateTime(uint8_t ofs)
 {
-	currTime.Seconds=server_message_data[ofs];
-	currTime.Minutes=server_message_data[ofs+1];
-	currTime.Hours=server_message_data[ofs+2];
-	HAL_RTC_SetTime(&hrtc, &currTime, FORMAT_BIN);
+	if(xSemaphoreTake(rtcMutex,1))
+	{
 
-	currDate.Date=server_message_data[ofs+3];
-	currDate.Month=server_message_data[ofs+4];
-	currDate.Year=server_message_data[ofs+5];
-	HAL_RTC_SetDate(&hrtc, &currDate, FORMAT_BIN);
+		currTime.Seconds=server_message_data[ofs];
+		currTime.Minutes=server_message_data[ofs+1];
+		currTime.Hours=server_message_data[ofs+2];
+		HAL_RTC_SetTime(&hrtc, &currTime, FORMAT_BIN);
 
-	LOG("%02d:%02d:%02d %02d.%02d.%02d\r\n",currTime.Hours, currTime.Minutes,
-			currTime.Seconds,currDate.Date, currDate.Month, currDate.Year);
+		currDate.Date=server_message_data[ofs+3];
+		currDate.Month=server_message_data[ofs+4];
+		currDate.Year=server_message_data[ofs+5];
+		HAL_RTC_SetDate(&hrtc, &currDate, FORMAT_BIN);
+
+		LOG("%02d:%02d:%02d %02d.%02d.%02d\t",currTime.Hours, currTime.Minutes,
+				currTime.Seconds,currDate.Date, currDate.Month, currDate.Year);
+
+		xSemaphoreGive(rtcMutex);
+	}
+	else
+	{
+		LOG("Cant take RTC Mutex\r\n");
+	}
 }
 
 
@@ -860,21 +868,14 @@ static inline void serverHandler()
 		{
 		case cmd_ping_request:
 		{
-			if(server_message_data[3]==0)
+			setDateTime(3);
+			uart_log("cmd_ping_request %u\r\n",server_message_data[2]);
+			msg->nmb=channels_number;
+			msg->cmd=cmd_ping_response;
+			msg->sz=64;
+			if(lte_send((char*)sendcmd,72)!=HAL_OK)
 			{
-				uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
-				msg->nmb=channels_number;
-				msg->cmd=cmd_ping_response;
-				msg->sz=64;
-				if(lte_send((char*)sendcmd,72)!=HAL_OK)
-				{
-					LOG("Error send PING Response \r\n");
-				}
-				pingTick=HAL_GetTick();
-			}
-			else
-			{
-				pingTick=HAL_GetTick();
+				LOG("Error send PING Response \r\n");
 			}
 			break;
 		}
@@ -924,18 +925,10 @@ static inline void serverHandler()
 		{
 			break;
 		}
-		case cmd_setRTC_request:
+		case cmd_setConfig_request:
 		{
-			LOG(" ***** RTC Set msg received %d %d \r\n", server_message_data[1]);
-			if(xSemaphoreTake(rtcMutex,1))
-			{
-				setDateTime(3);
-				xSemaphoreGive(rtcMutex);
-			}
-			else
-			{
-				LOG("Cant take RTC Mutex\r\n");
-			}
+			LOG(" ***** setConfig msg received %d %d \r\n", server_message_data[1]);
+			setDateTime(3);
 			if(xSemaphoreTake(audioMutex,1))
 			{
 				settings_sector=*((uint32_t*)(server_message_data+12));
@@ -960,18 +953,22 @@ static inline void serverHandler()
 			}
 
 			msg->nmb=channels_number;
-			msg->cmd=cmd_setRTC_response;
+			msg->cmd=cmd_setConfig_response;
 			msg->sz=64;
 			if(lte_send((char*)sendcmd,72)==HAL_OK)
 			{
-				LOG("setRTC Response sent\r\n");
+				LOG("setConfig Response sent\r\n");
 			}
 			else
 			{
-				LOG("setRTC Response send error!\r\n");
-				break;
+				LOG("setConfig Response send error!\r\n");
 			}
-
+			break;
+		}
+		case cmd_AudioData_response:
+		{
+			setDateTime(3);
+			LOG("cmd_AudioData_response %u\r\n",server_message_data[2]);
 			break;
 		}
 		default:

@@ -20,7 +20,7 @@ enum  CMD
     cmd_ping_response   =   0x02U, // sensor <--> server
 
 	cmd_AudioData_request   =   0x03U, // sensor --> server
-	cmd_AudioData_response  =   0x04U, // server --> server
+	cmd_AudioData_response  =   0x04U, // server --> sensor
 
 	cmd_startAudio_request  =   0x05U, // server --> sensor
 	cmd_startAudio_response =   0x06U, // sensor --> server
@@ -34,8 +34,8 @@ enum  CMD
 	cmd_stopLive_request   =   0x0bU, // server --> sensor
 	cmd_stopLive_response  =   0x0cU, // sensor --> server
 
-	cmd_setRTC_request	= 0x0dU,	//server --> sensor
-	cmd_setRTC_response	= 0x0eU,	//sensor --> server
+	cmd_setConfig_request	= 0x0dU,	//server --> sensor
+	cmd_setConfig_response	= 0x0eU,	//sensor --> server
 
     cmd_None    =0x00ffU
 };
