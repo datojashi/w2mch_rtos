@@ -33,7 +33,7 @@ volatile uint8_t connected_to_server=0;
 
 uint8_t lte_status=0;
 
-char server_message_data[256];
+char server_message_data[64];
 volatile uint8_t recvcmplt=2;
 volatile uint32_t recv_tickstart=0;
 volatile uint8_t uarterror=0;
@@ -58,8 +58,6 @@ extern volatile  uint32_t data_sector;
 //extern uint8_t* sendcmd;
 
 extern uint8_t channels_number;
-
-uint8_t pData[256];
 uint32_t pingTick=0;
 
 uint32_t baud_rate=115200;
@@ -213,7 +211,7 @@ static inline uint8_t lte_start_recv_DMA(UART_HandleTypeDef *huart)
 		HAL_UART_AbortReceive(huart);
 		vTaskDelay(1);
 	}
-	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)server_message_data, 256);
+	hstat = HAL_UART_Receive_DMA(huart, (uint8_t*)server_message_data, 64);
 	if(hstat!=HAL_OK)
 	{
 		LOG("Error start receive DMA, for server commands %u\r\n", hstat);
@@ -339,14 +337,14 @@ static inline LTE_Status send_audio(char* data, int n)
 	LTE_Status result=LTE_NO;
 	char* d = data;
 
-	for(int i=0; i<n; i++)
+	for(int i=0; i<n; i+=2)
 	{
 		d=data+512*i;
-		memcpy(sendbuf,d,512);
+		memcpy(sendbuf,d,1024);
 		msg->nmb=channels_number;
 		msg->cmd=cmd_AudioData_request;
-		msg->sz=512;
-		if(lte_send((char*)sendcmd,560)==HAL_OK)
+		msg->sz=1024;
+		if(lte_send((char*)sendcmd,1032)==HAL_OK)
 		{
 			result=LTE_OK;
 		}
@@ -867,8 +865,8 @@ static inline void serverHandler()
 				uart_log("=== PING FROM SERVER === %u\r\n",server_message_data[2]);
 				msg->nmb=channels_number;
 				msg->cmd=cmd_ping_response;
-				msg->sz=256;
-				if(lte_send((char*)sendcmd,264)!=HAL_OK)
+				msg->sz=64;
+				if(lte_send((char*)sendcmd,72)!=HAL_OK)
 				{
 					LOG("Error send PING Response \r\n");
 				}
@@ -892,8 +890,8 @@ static inline void serverHandler()
 			}
 			msg->nmb=channels_number;
 			msg->cmd=cmd_startAudio_response;
-			msg->sz=256;
-			if(lte_send((char*)sendcmd,264)!=HAL_OK)
+			msg->sz=64;
+			if(lte_send((char*)sendcmd,72)!=HAL_OK)
 			{
 				LOG("Error send startAudio Response \r\n");
 			}
@@ -911,8 +909,8 @@ static inline void serverHandler()
 			}
 			msg->nmb=channels_number;
 			msg->cmd=cmd_stopAudio_response;
-			msg->sz=256;
-			if(lte_send((char*)sendcmd,264)!=HAL_OK)
+			msg->sz=64;
+			if(lte_send((char*)sendcmd,72)!=HAL_OK)
 			{
 				LOG("Error send stopAudio Response \r\n");
 			}
@@ -963,8 +961,8 @@ static inline void serverHandler()
 
 			msg->nmb=channels_number;
 			msg->cmd=cmd_setRTC_response;
-			msg->sz=256;
-			if(lte_send((char*)sendcmd,264)==HAL_OK)
+			msg->sz=64;
+			if(lte_send((char*)sendcmd,72)==HAL_OK)
 			{
 				LOG("setRTC Response sent\r\n");
 			}
@@ -1212,6 +1210,8 @@ void lteTaskRun(void* param)
 		{
 			lte_reconnect();
 		}
+
+		//HAL_I2C_Mem_Write(hi2c, DevAddress, MemAddress, MemAddSize, pData, Size, Timeout);
 
 		if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)==1)
 		{
