@@ -885,7 +885,9 @@ static inline void serverHandler()
 		}
 		case cmd_startAudio_request:
 		{
-			uart_log("=== Start Audio Request === %u\r\n",server_message_data[2]);
+			uint32_t start_sector=*((uint32_t*)(server_message_data+4));
+			uint32_t stop_sector=*((uint32_t*)(server_message_data+8));
+			uart_log("=== Start Audio Request === %u  %u  %u\r\n",server_message_data[2],start_sector, stop_sector);
 			while(!setStatusFlag(sf_Read)){
 				vTaskDelay(2);
 			}
