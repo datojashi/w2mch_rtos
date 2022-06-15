@@ -220,16 +220,7 @@ void audioTaskRun(void* param)
 
 	samplebuf=(uint16_t*)(audio_param->sram1+0x30000);
 	samplebufByte=(audio_param->sram1+0x30000);
-
 	readbuf=(audio_param->sram1+0x40000);
-
-
-
-
-
-
-
-
 
 	channels_number=audio_param->hadc->Init.NbrOfConversion;
 
@@ -266,6 +257,7 @@ void audioTaskRun(void* param)
 
 	LOG("Audio Task started, %d Channels\r\n", channels_number);
 
+	uint8_t do_live=0;
 	while(1)
 	{
 		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,1);
@@ -292,6 +284,7 @@ void audioTaskRun(void* param)
 				}
 				clock_ct=0;
 			}
+			do_live=1;
 			sampleBufReady=0;
 		}
 		if(xSemaphoreTake(audioMutex,1)==pdTRUE)
@@ -313,8 +306,12 @@ void audioTaskRun(void* param)
 			}
 			case sf_Live:
 			{
-				memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
-				status_flag=sf_Send;
+				if(do_live==1)
+				{
+					memcpy(readbuf,alawbuf,ALAW_BUFFER_SIZE);
+					status_flag=sf_Send;
+					do_live=0;
+				}
 				break;
 			}
 			default:

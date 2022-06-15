@@ -22,17 +22,17 @@ enum  CMD
 	cmd_AudioData_request   =   0x03U, // sensor --> server
 	cmd_AudioData_response  =   0x04U, // server --> sensor
 
-	cmd_startAudio_request  =   0x05U, // server --> sensor
+	cmd_startTransmit_request  =   0x05U, // server --> sensor
 	cmd_startAudio_response =   0x06U, // sensor --> server
 
-	cmd_stopAudio_request   =   0x07U, //  server --> sensor
-	cmd_stopAudio_response  =   0x08U, //  sensor --> server
+	cmd_stopTransmit_request   =   0x07U, //  server --> sensor
+	cmd_stopTransmit_response  =   0x08U, //  sensor --> server
 
-	cmd_startLive_request   =   0x09U, // server --> sensor
-    cmd_startLive_response  =   0x0aU, // sensor --> server
+	//cmd_startLive_request   =   0x09U, // server --> sensor
+    //cmd_startLive_response  =   0x0aU, // sensor --> server
 
-	cmd_stopLive_request   =   0x0bU, // server --> sensor
-	cmd_stopLive_response  =   0x0cU, // sensor --> server
+	//cmd_stopLive_request   =   0x0bU, // server --> sensor
+	//cmd_stopLive_response  =   0x0cU, // sensor --> server
 
 	cmd_setConfig_request	= 0x0dU,	//server --> sensor
 	cmd_setConfig_response	= 0x0eU,	//sensor --> server

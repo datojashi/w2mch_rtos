@@ -5,6 +5,28 @@
  *      Author: David Jashi
  */
 
+
+/*
+ *    request from server:
+ *    	64 byte
+ *
+ *    	0 - 0
+ *    	1 - cmd
+ *    	2 - counter not really needed
+ *    	4 - t0
+ *    	8 - t1
+ *    	12 - SETTINGS_SECTOR
+ *    	16 - CLOCK_SECTOR
+ *    	20 - DATA_SECTOR
+ *    	24 - BAUD_RATE
+ *
+ *   response from sensor:
+ *		72 byte
+ *
+ *
+ */
+
+
 #ifndef INC_LTE_H_
 #define INC_LTE_H_
 

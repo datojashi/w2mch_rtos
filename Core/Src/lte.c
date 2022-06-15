@@ -62,6 +62,15 @@ uint32_t pingTick=0;
 
 uint32_t baud_rate=115200;
 
+uint32_t start_sector=0;
+uint32_t stop_sector=0;
+uint8_t live=0;
+uint8_t transmiting=0;
+uint8_t reconnecting=0;
+
+RTC_TimeTypeDef initTime;
+RTC_DateTypeDef initDate;
+
 void lteRecvHandler()
 {
 	HAL_GPIO_TogglePin(TEST2_GPIO_Port, TEST2_Pin);
@@ -883,14 +892,27 @@ static inline void serverHandler()
 		{
 			break;
 		}
-		case cmd_startAudio_request:
+		case cmd_startTransmit_request:
 		{
-			uint32_t start_sector=*((uint32_t*)(server_message_data+4));
-			uint32_t stop_sector=*((uint32_t*)(server_message_data+8));
-			uart_log("=== Start Audio Request === %u  %u  %u\r\n",server_message_data[2],start_sector, stop_sector);
-			while(!setStatusFlag(sf_Read)){
-				vTaskDelay(2);
+			start_sector=*((uint32_t*)(server_message_data+4));
+			stop_sector=*((uint32_t*)(server_message_data+8));
+			uart_log("=== Start Transmit Request === %u  %u  %u\r\n",server_message_data[2],start_sector, stop_sector);
+			/*todo
+			 * Implement reads with start_sector and stop_sector
+			 * or live if start_sector==0 and stop_sector==0
+			 */
+			if(start_sector==0 && stop_sector==0)
+			{
+				LOG("=== Live request === \r\n");
+				while(!setStatusFlag(sf_Live)) vTaskDelay(2);
+				live=1;
 			}
+			else
+			{
+				while(!setStatusFlag(sf_Read)) vTaskDelay(2);
+				live=0;
+			}
+
 			msg->nmb=channels_number;
 			msg->cmd=cmd_startAudio_response;
 			msg->sz=64;
@@ -902,61 +924,75 @@ static inline void serverHandler()
 			{
 				LOG("startAudio response sent \r\n");
 			}
+			transmiting=1;
 			break;
 		}
-		case cmd_stopAudio_request:
+		case cmd_stopTransmit_request:
 		{
-			uart_log("=== Stop Audio Request === %u\r\n",server_message_data[2]);
-			while(!setStatusFlag(sf_No)){
-				vTaskDelay(2);
-			}
+			uart_log("=== Stop Transmit Request === %u\r\n",server_message_data[2]);
+			while(!setStatusFlag(sf_No)) vTaskDelay(2);
 			msg->nmb=channels_number;
-			msg->cmd=cmd_stopAudio_response;
+			msg->cmd=cmd_stopTransmit_response;
 			msg->sz=64;
 			if(lte_send((char*)sendcmd,72)!=HAL_OK)
 			{
-				LOG("Error send stopAudio Response \r\n");
+				LOG("Error send stopTransmit Response \r\n");
 			}
 			else
 			{
-				LOG("stopAudio response sent \r\n");
+				LOG("stopTransmit response sent \r\n");
 			}
-			break;
-		}
-		case cmd_startLive_request:
-		{
+			transmiting=0;
 			break;
 		}
 		case cmd_setConfig_request:
 		{
 			LOG(" ***** setConfig msg received %d %d \r\n", server_message_data[1]);
-			setDateTime(3);
-			if(xSemaphoreTake(audioMutex,1))
+			if(reconnecting==0)
 			{
-				settings_sector=*((uint32_t*)(server_message_data+12));
-				clock_sector=*((uint32_t*)(server_message_data+16));
-				data_sector=*((uint32_t*)(server_message_data+20));
-				status_flag=sf_No;
-				/*
-				uint32_t br=*((uint32_t*)(server_message_data+24));
-				if(br!=baud_rate)
+				setDateTime(3);
+				initTime=currTime;
+				initDate=currDate;
+				if(xSemaphoreTake(audioMutex,1))
 				{
-					change_boudrate(br);
-				}
-				*/
-				xSemaphoreGive(audioMutex);
+					settings_sector=*((uint32_t*)(server_message_data+12));
+					clock_sector=*((uint32_t*)(server_message_data+16));
+					data_sector=*((uint32_t*)(server_message_data+20));
+					status_flag=sf_No;
+					/*
+					uint32_t br=*((uint32_t*)(server_message_data+24));
+					if(br!=baud_rate)
+					{
+						change_boudrate(br);
+					}
+					 */
+					xSemaphoreGive(audioMutex);
 
-				LOG("Sector Settings(settings,clock,data) settings_secor=%u clock_sector=%u"
-						"data_sector=%u baud_rate=%u \r\n",settings_sector,clock_sector,data_sector, baud_rate);
+					LOG("Sector Settings(settings,clock,data) settings_secor=%u clock_sector=%u"
+							"data_sector=%u baud_rate=%u \r\n",settings_sector,clock_sector,data_sector, baud_rate);
+				}
+				else
+				{
+					LOG("Cant take RTC Mutex\r\n");
+				}
 			}
 			else
 			{
-				LOG("Cant take RTC Mutex\r\n");
+				sendcmd[sizeof(struct MESSAGE)]=reconnecting;
+				sendcmd[sizeof(struct MESSAGE)+1]=transmiting;
+				sendcmd[sizeof(struct MESSAGE)+2]=live;
+				sendcmd[sizeof(struct MESSAGE)+3]=initTime.Seconds;
+				sendcmd[sizeof(struct MESSAGE)+4]=initTime.Minutes;
+				sendcmd[sizeof(struct MESSAGE)+5]=initTime.Hours;
+				sendcmd[sizeof(struct MESSAGE)+6]=initDate.Date;
+				sendcmd[sizeof(struct MESSAGE)+7]=initDate.Month;
+				sendcmd[sizeof(struct MESSAGE)+8]=initDate.Year;
 			}
 
 			msg->nmb=channels_number;
 			msg->cmd=cmd_setConfig_response;
 			msg->sz=64;
+
 			if(lte_send((char*)sendcmd,72)==HAL_OK)
 			{
 				LOG("setConfig Response sent\r\n");
@@ -1030,8 +1066,8 @@ static inline LTE_Status lte_connect()
 		LOG("Waiting initial message from server ... \r\n");
 		while(rtcset==0 && w_ct < 20)
 		{
-			recvcmplt=0;
-			if(lte_start_recv_DMA(lte_param->huart)==0)
+			recvcmplt=lte_start_recv_DMA(lte_param->huart);
+			if(recvcmplt==0)
 			{
 				while(recvcmplt==0 && rtc_ct < 5)
 				{
@@ -1075,6 +1111,7 @@ static inline void lte_reconnect()
 	uint8_t status;
 	if(getStatusFlag(&status))
 	{
+		reconnecting=1;
 		LOG("Reconnecting ... \r\n");
 		lte_endtransparent();
 		lte_tcp_close();
@@ -1087,6 +1124,7 @@ static inline void lte_reconnect()
 		recvcmplt=lte_start_recv_DMA(lte_param->huart);
 		pingTick=HAL_GetTick();
 		LOG("Reconnected. \r\n");
+		reconnecting=0;
 	}
 	else
 	{
@@ -1165,12 +1203,12 @@ void lteTaskRun(void* param)
 			if(xSemaphoreTake(audioMutex,1)==pdTRUE)
 			{
 
-				if(last_cmd==cmd_startAudio_request || last_cmd==cmd_startLive_request)
+				if(last_cmd==cmd_startTransmit_request)
 				{
 					status_flag=sf_Read;
 				}
 
-				if(last_cmd==cmd_stopAudio_request || last_cmd==cmd_stopLive_response)
+				if(last_cmd==cmd_stopTransmit_request)
 				{
 					status_flag=sf_No;
 				}
@@ -1181,7 +1219,10 @@ void lteTaskRun(void* param)
 					send_audio((char*)readbuf,24);
 					//while(recvcmplt==0);
 					HAL_GPIO_WritePin(TEST1_GPIO_Port, TEST1_Pin,0);
-					status_flag=sf_Read;
+					if(live==1)
+						status_flag=sf_Live;
+					else
+						status_flag=sf_Read;
 				}
 				xSemaphoreGive(audioMutex);
 			}
@@ -1207,6 +1248,8 @@ void lteTaskRun(void* param)
 		}
 		else
 		{
+			lte_endtransparent();
+			lte_tcp_close();
 			lte_reconnect();
 		}
 
